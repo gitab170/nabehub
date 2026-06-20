@@ -1,5 +1,5 @@
 -- ==========================================
--- なべHUBv1 (認証なし・即起動)
+-- なべHUBv1.3 (認証なし・完全統合版・バグ修正済)
 -- ==========================================
 
 local Players = game:GetService("Players")
@@ -11,14 +11,14 @@ local UserInputService = game:GetService("UserInputService")
 
 -- OrionLib 読み込み
 local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion"))()
-if not OrionLib then
-    warn("OrionLib 読み込み失敗")
-    return
+if not OrionLib then 
+    warn("OrionLib 読み込み失敗") 
+    return 
 end
 
 -- ========== ウィンドウ構築 ==========
 local MainWindow = OrionLib:MakeWindow({
-    Name = "なべHUBv1",
+    Name = "なべHUBv1.3",
     HidePremium = true,
     SaveConfig = false,
     Searchable = false,
@@ -26,34 +26,29 @@ local MainWindow = OrionLib:MakeWindow({
     BackgroundColor = Color3.fromRGB(40, 30, 20)
 })
 
--- Mineタブ（空）
-local MineTab = MainWindow:MakeTab({
-    Name = "Mine",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
-})
+-- 各種タブの作成
+local MineTab = MainWindow:MakeTab({ Name = "Mine", Icon = "rbxassetid://4483345998", PremiumOnly = false })
+local PlayerTab = MainWindow:MakeTab({ Name = "プレイヤー", Icon = "rbxassetid://6031094678", PremiumOnly = false })
+local VisualsTab = MainWindow:MakeTab({ Name = "画面", Icon = "rbxassetid://6031094678", PremiumOnly = false })
+local ItemsTab = MainWindow:MakeTab({ Name = "物人", Icon = "rbxassetid://6031079977", PremiumOnly = false })
 
--- ==================== プレイヤータブ ====================
-local PlayerTab = MainWindow:MakeTab({
-    Name = "プレイヤー",
-    Icon = "rbxassetid://6031094678",
-    PremiumOnly = false
-})
-
--- ==================== 変数 ====================
+-- ==================== 変数設定 ====================
 local WalkSpeedValue = 16
 local JumpPowerValue = 50
 local GravityValue = 196.2
+local FOVValue = 70
 
 local SpeedEnabled = false
 local InfiniteJumpEnabled = false
 local NoclipEnabled = false
+local NoclipConnection = nil
 local GravityEnabled = false
 
--- ==================== ESP変数 ====================
+-- ESP用の変数 (v1.2基準)
 local ESPEnabled = false
-local ESPObjects = {}
-local ESPConnection = nil
+local RainbowESP = false
+local RainbowSpeed = 0.015
+local ShowGreenOutline = false
 
 local ShowBox = true
 local ShowName = true
@@ -61,155 +56,141 @@ local ShowHealthBar = true
 local ShowDistance = true
 local ShowTracers = true
 
--- ==================== 基本関数 ====================
+local ESPObjects = {}
+local ESPConnection = nil
+local RainbowHue = 0
+
+-- ==================== 基本共通関数 ====================
 local function applyCharacterSettings(character)
     task.wait(0.6)
-    local humanoid = character:FindFirstChild("Humanoid")
-    if not humanoid then return end
-    
-    if SpeedEnabled then humanoid.WalkSpeed = WalkSpeedValue end
-    humanoid.JumpPower = JumpPowerValue
-    humanoid.JumpHeight = JumpPowerValue * 0.6
+    local hum = character:FindFirstChild("Humanoid")
+    if hum then
+        if SpeedEnabled then hum.WalkSpeed = WalkSpeedValue end
+        hum.JumpPower = JumpPowerValue
+        hum.JumpHeight = JumpPowerValue * 0.6
+    end
 end
 
-local function resetGravity()
-    Workspace.Gravity = 196.2
+local function getRainbowColor()
+    RainbowHue = (RainbowHue + RainbowSpeed) % 1
+    return Color3.fromHSV(RainbowHue, 1, 1)
 end
 
--- ==================== 高性能ESP ====================
+-- ==================== 高性能ESP関数 (v1.2仕様) ====================
 local function createESP(player)
     if player == LocalPlayer then return end
+    local d = {}
+    d.Box = Drawing.new("Square")
+    d.GreenOutline = Drawing.new("Square")
+    d.Name = Drawing.new("Text")
+    d.Distance = Drawing.new("Text")
+    d.HealthBar = Drawing.new("Square")
+    d.HealthOutline = Drawing.new("Square")
+    d.Tracer = Drawing.new("Line")
 
-    local box = Drawing.new("Square")
-    box.Thickness = 2; box.Filled = false; box.Color = Color3.fromRGB(255, 50, 50); box.Transparency = 1
+    d.Box.Thickness = 2; d.Box.Filled = false
+    d.GreenOutline.Thickness = 2; d.GreenOutline.Filled = false; d.GreenOutline.Color = Color3.fromRGB(0, 255, 100)
+    d.Name.Size = 16; d.Name.Center = true; d.Name.Outline = true
+    d.Distance.Size = 14; d.Distance.Center = true; d.Distance.Outline = true
+    d.HealthOutline.Thickness = 1; d.HealthOutline.Filled = false
+    d.HealthBar.Thickness = 1; d.HealthBar.Filled = true
+    d.Tracer.Thickness = 1.5
 
-    local nameText = Drawing.new("Text")
-    nameText.Size = 16; nameText.Center = true; nameText.Outline = true; nameText.Color = Color3.fromRGB(255, 255, 255)
-
-    local distanceText = Drawing.new("Text")
-    distanceText.Size = 14; distanceText.Center = true; distanceText.Outline = true; distanceText.Color = Color3.fromRGB(200, 200, 200)
-
-    local healthBarOutline = Drawing.new("Square")
-    healthBarOutline.Thickness = 1; healthBarOutline.Filled = false; healthBarOutline.Color = Color3.fromRGB(0, 0, 0)
-
-    local healthBar = Drawing.new("Square")
-    healthBar.Thickness = 1; healthBar.Filled = true; healthBar.Color = Color3.fromRGB(0, 255, 0)
-
-    local tracer = Drawing.new("Line")
-    tracer.Thickness = 1.5; tracer.Color = Color3.fromRGB(255, 50, 50); tracer.Transparency = 0.7
-
-    ESPObjects[player] = {Box = box, Name = nameText, Distance = distanceText, HealthBar = healthBar, HealthOutline = healthBarOutline, Tracer = tracer}
+    ESPObjects[player] = d
 end
 
 local function updateESP()
     if not ESPEnabled then return end
-    for player, drawings in pairs(ESPObjects) do
-        local character = player.Character
-        if not character or not character:FindFirstChild("HumanoidRootPart") then
-            for _, v in pairs(drawings) do v.Visible = false end
+    for player, d in pairs(ESPObjects) do
+        local char = player.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then
+            for _, obj in pairs(d) do obj.Visible = false end
             continue
         end
 
-        local root = character.HumanoidRootPart
-        local head = character:FindFirstChild("Head")
-        local humanoid = character:FindFirstChild("Humanoid")
-        if not head or not humanoid then continue end
+        local root = char.HumanoidRootPart
+        local head = char:FindFirstChild("Head")
+        local hum = char:FindFirstChild("Humanoid")
+        if not head or not hum then continue end
 
-        local camera = Workspace.CurrentCamera
-        local rootPos, onScreen = camera:WorldToViewportPoint(root.Position)
-        if not onScreen then 
-            for _, v in pairs(drawings) do v.Visible = false end
-            continue 
+        local cam = Workspace.CurrentCamera
+        local rootPos, onScreen = cam:WorldToViewportPoint(root.Position)
+        if not onScreen then
+            for _, obj in pairs(d) do obj.Visible = false end
+            continue
         end
 
-        local headPos = camera:WorldToViewportPoint(head.Position + Vector3.new(0,0.5,0))
-        local legPos = camera:WorldToViewportPoint(root.Position - Vector3.new(0,3,0))
-
+        local headPos = cam:WorldToViewportPoint(head.Position + Vector3.new(0,0.5,0))
+        local legPos = cam:WorldToViewportPoint(root.Position - Vector3.new(0,3,0))
         local height = math.abs(headPos.Y - legPos.Y)
         local width = height * 0.6
 
+        local rainbow = getRainbowColor()
+
         -- Box
-        drawings.Box.Size = Vector2.new(width, height)
-        drawings.Box.Position = Vector2.new(rootPos.X - width/2, rootPos.Y - height/2)
-        drawings.Box.Visible = ShowBox
+        d.Box.Color = RainbowESP and rainbow or Color3.fromRGB(255, 50, 50)
+        d.Box.Size = Vector2.new(width, height)
+        d.Box.Position = Vector2.new(rootPos.X - width/2, rootPos.Y - height/2)
+        d.Box.Visible = ShowBox
+
+        -- 緑の輪郭
+        d.GreenOutline.Size = Vector2.new(width * 1.1, height * 0.4)
+        d.GreenOutline.Position = Vector2.new(rootPos.X - (width * 1.1)/2, rootPos.Y - height/2 - 5)
+        d.GreenOutline.Visible = ShowGreenOutline
 
         -- Name
-        drawings.Name.Text = player.Name .. " [" .. math.floor(humanoid.Health) .. "]"
-        drawings.Name.Position = Vector2.new(rootPos.X, rootPos.Y - height/2 - 22)
-        drawings.Name.Visible = ShowName
+        d.Name.Text = player.Name .. " [" .. math.floor(hum.Health) .. "]"
+        d.Name.Position = Vector2.new(rootPos.X, rootPos.Y - height/2 - 25)
+        d.Name.Visible = ShowName
 
         -- Distance
         local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         local dist = myRoot and math.floor((myRoot.Position - root.Position).Magnitude) or 0
-        drawings.Distance.Text = dist .. " studs"
-        drawings.Distance.Position = Vector2.new(rootPos.X, rootPos.Y + height/2 + 8)
-        drawings.Distance.Visible = ShowDistance
+        d.Distance.Text = dist .. " studs"
+        d.Distance.Position = Vector2.new(rootPos.X, rootPos.Y + height/2 + 10)
+        d.Distance.Visible = ShowDistance
 
         -- Health Bar
-        local hpPercent = humanoid.Health / humanoid.MaxHealth
-        local barH = height * 0.8
-        drawings.HealthOutline.Size = Vector2.new(4, barH)
-        drawings.HealthOutline.Position = Vector2.new(rootPos.X - width/2 - 8, rootPos.Y - height/2)
-        drawings.HealthOutline.Visible = ShowHealthBar
+        local hp = hum.Health / hum.MaxHealth
+        local barH = height * 0.75
+        d.HealthOutline.Size = Vector2.new(4, barH)
+        d.HealthOutline.Position = Vector2.new(rootPos.X - width/2 - 10, rootPos.Y - height/2 + (barH * (1 - hp)))
+        d.HealthOutline.Visible = ShowHealthBar
 
-        drawings.HealthBar.Size = Vector2.new(4, barH * hpPercent)
-        drawings.HealthBar.Position = Vector2.new(rootPos.X - width/2 - 8, rootPos.Y - height/2 + barH * (1 - hpPercent))
-        drawings.HealthBar.Visible = ShowHealthBar
+        d.HealthBar.Size = Vector2.new(4, barH * hp)
+        d.HealthBar.Position = Vector2.new(rootPos.X - width/2 - 10, rootPos.Y - height/2 + barH * (1 - hp))
+        d.HealthBar.Visible = ShowHealthBar
 
         -- Tracer
         if ShowTracers and myRoot then
-            drawings.Tracer.From = Vector2.new(camera.ViewportSize.X/2, camera.ViewportSize.Y)
-            drawings.Tracer.To = Vector2.new(rootPos.X, rootPos.Y)
-            drawings.Tracer.Visible = true
-        else
-            drawings.Tracer.Visible = false
+            d.Tracer.From = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y)
+            d.Tracer.To = Vector2.new(rootPos.X, rootPos.Y)
+            d.Tracer.Color = RainbowESP and rainbow or Color3.fromRGB(255, 50, 50)
+            d.Tracer.Visible = true
         end
     end
 end
 
--- ==================== ESP UI ====================
-PlayerTab:AddToggle({
-    Name = "高性能ESP 有効",
-    Default = false,
-    Color = Color3.fromRGB(255, 50, 50),
-    Callback = function(Value)
-        ESPEnabled = Value
-        if Value then
-            for _, p in pairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and not ESPObjects[p] then createESP(p) end
-            end
-            ESPConnection = RunService.RenderStepped:Connect(updateESP)
-        else
-            if ESPConnection then ESPConnection:Disconnect() end
-            for _, drawings in pairs(ESPObjects) do
-                for _, obj in pairs(drawings) do if obj then obj:Remove() end end
-            end
-            ESPObjects = {}
-        end
-    end
-})
-
-PlayerTab:AddSection({Name = "ESP 表示設定"})
-PlayerTab:AddToggle({Name = "Box 表示", Default = true, Callback = function(v) ShowBox = v end})
-PlayerTab:AddToggle({Name = "名前 + 体力 表示", Default = true, Callback = function(v) ShowName = v end})
-PlayerTab:AddToggle({Name = "体力バー 表示", Default = true, Callback = function(v) ShowHealthBar = v end})
-PlayerTab:AddToggle({Name = "距離 表示", Default = true, Callback = function(v) ShowDistance = v end})
-PlayerTab:AddToggle({Name = "Tracers 表示", Default = true, Callback = function(v) ShowTracers = v end})
-
--- ==================== 移動・その他機能 ====================
+-- ==================== プレイヤータブ (移動系メイン) ====================
 PlayerTab:AddSection({Name = "移動・物理設定"})
 
 PlayerTab:AddSlider({
     Name = "移動速度", Min = 16, Max = 200, Default = 16,
     Color = Color3.fromRGB(0, 162, 255), Increment = 1, ValueName = " studs/s",
-    Callback = function(v) WalkSpeedValue = v; if SpeedEnabled then
-        local c = LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed = v end
-    end end
+    Callback = function(v) 
+        WalkSpeedValue = v
+        if SpeedEnabled then
+            local c = LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed = v end
+        end 
+    end
 })
 
 PlayerTab:AddToggle({
     Name = "カスタム移動速度有効", Default = false, Color = Color3.fromRGB(0, 162, 255),
-    Callback = function(v) SpeedEnabled = v; local c=LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed = v and WalkSpeedValue or 16 end end
+    Callback = function(v) 
+        SpeedEnabled = v
+        local c = LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed = v and WalkSpeedValue or 16 end 
+    end
 })
 
 PlayerTab:AddSlider({
@@ -228,19 +209,47 @@ PlayerTab:AddToggle({
     Callback = function(v) InfiniteJumpEnabled = v end
 })
 
-UserInputService.JumpRequest:Connect(function()
-    if InfiniteJumpEnabled then
-        local c = LocalPlayer.Character; local h = c and c:FindFirstChild("Humanoid")
-        if h then h:ChangeState("Jumping") end
-    end
-end)
-
+-- 【修正版】壁抜け (Noclip) 処理
 PlayerTab:AddToggle({
     Name = "壁抜け (Noclip)", Default = false, Color = Color3.fromRGB(0, 162, 255),
     Callback = function(v)
         NoclipEnabled = v
-        local c = LocalPlayer.Character
-        if c then for _, part in pairs(c:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = not v end end end
+        
+        if NoclipConnection then 
+            NoclipConnection:Disconnect() 
+            NoclipConnection = nil 
+        end
+
+        if NoclipEnabled then
+            -- オン時：毎フレーム安全に全パーツの衝突判定を無効化（小さなスキン対策）
+            NoclipConnection = RunService.Stepped:Connect(function()
+                local c = LocalPlayer.Character
+                if c then
+                    for _, part in pairs(c:GetDescendants()) do
+                        if part:IsA("BasePart") and part.CanCollide then
+                            part.CanCollide = false
+                        end
+                    end
+                end
+            end)
+        else
+            -- オフ時：キャラクターの物理破綻を防ぐため正常な衝突設定にリセット
+            local c = LocalPlayer.Character
+            if c then
+                for _, part in pairs(c:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        if part.Name == "HumanoidRootPart" then
+                            part.CanCollide = false -- RootPartは常にfalseが正常
+                        else
+                            part.CanCollide = true
+                        end
+                    end
+                end
+                -- 浮き・埋まりのすり合わせのため着地状態を強制
+                local hum = c:FindFirstChild("Humanoid")
+                if hum then hum:ChangeState("Land") end
+            end
+        end
     end
 })
 
@@ -255,11 +264,82 @@ PlayerTab:AddToggle({
     Callback = function(v) GravityEnabled = v; Workspace.Gravity = v and GravityValue or 196.2 end
 })
 
--- リスポーン対応
+PlayerTab:AddSection({Name = "カメラ設定"})
+PlayerTab:AddSlider({
+    Name = "FOV", Min = 30, Max = 120, Default = 70,
+    Color = Color3.fromRGB(0, 162, 255), Increment = 1, ValueName = "°",
+    Callback = function(v)
+        FOVValue = v
+        Workspace.CurrentCamera.FieldOfView = v
+    end
+})
+
+-- ==================== 画面タブ (v1.2の全ESP設定) ====================
+VisualsTab:AddToggle({
+    Name = "高性能ESP 有効",
+    Default = false,
+    Color = Color3.fromRGB(255, 50, 50),
+    Callback = function(v)
+        ESPEnabled = v
+        if v then
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and not ESPObjects[p] then createESP(p) end
+            end
+            ESPConnection = RunService.RenderStepped:Connect(updateESP)
+        else
+            if ESPConnection then ESPConnection:Disconnect() end
+            for _, drawings in pairs(ESPObjects) do
+                for _, obj in pairs(drawings) do if obj then obj:Remove() end end
+            end
+            ESPObjects = {}
+        end
+    end
+})
+
+VisualsTab:AddToggle({Name = "ESP レインボー", Default = false, Color = Color3.fromRGB(255, 100, 255), Callback = function(v) RainbowESP = v end})
+VisualsTab:AddSlider({Name = "レインボー速度", Min = 0.001, Max = 0.1, Default = 0.015, Color = Color3.fromRGB(255, 100, 255), Increment = 0.001, Callback = function(v) RainbowSpeed = v end})
+
+VisualsTab:AddSection({Name = "ESP 表示設定"})
+VisualsTab:AddToggle({Name = "緑の輪郭 (上に長い)", Default = false, Color = Color3.fromRGB(0, 255, 100), Callback = function(v) ShowGreenOutline = v end})
+VisualsTab:AddToggle({Name = "Box 表示", Default = true, Callback = function(v) ShowBox = v end})
+VisualsTab:AddToggle({Name = "名前 + 体力", Default = true, Callback = function(v) ShowName = v end})
+VisualsTab:AddToggle({Name = "体力バー", Default = true, Callback = function(v) ShowHealthBar = v end})
+VisualsTab:AddToggle({Name = "距離 表示", Default = true, Callback = function(v) ShowDistance = v end})
+VisualsTab:AddToggle({Name = "Tracers", Default = true, Callback = function(v) ShowTracers = v end})
+
+-- ==================== 物人タブ・その他機能 ====================
+ItemsTab:AddSection({Name = "物人機能"})
+ItemsTab:AddLabel("ここに後で機能を追加できます")
+
+-- ==================== イベント・ループ処理 ====================
+-- 無限ジャンプ実行処理
+UserInputService.JumpRequest:Connect(function()
+    if InfiniteJumpEnabled then
+        local c = LocalPlayer.Character; local h = c and c:FindFirstChild("Humanoid")
+        if h then h:ChangeState("Jumping") end
+    end
+end)
+
+-- リスポーン処理
 LocalPlayer.CharacterAdded:Connect(applyCharacterSettings)
 if LocalPlayer.Character then applyCharacterSettings(LocalPlayer.Character) end
 
--- ==================== 虹色枠エフェクト ====================
+-- プレイヤーが新たに参加した際にESP用データを生成
+Players.PlayerAdded:Connect(function(p)
+    if ESPEnabled and p ~= LocalPlayer and not ESPObjects[p] then
+        createESP(p)
+    end
+end)
+
+-- プレイヤーが抜けた際にESP用データを削除
+Players.PlayerRemoving:Connect(function(p)
+    if ESPObjects[p] then
+        for _, obj in pairs(ESPObjects[p]) do if obj then obj:Remove() end end
+        ESPObjects[p] = nil
+    end
+end)
+
+-- ==================== 虹色枠エフェクト (v1仕様) ====================
 local function addRainbowBorder()
     task.wait(0.5)
     local mainFrame = nil
@@ -306,6 +386,7 @@ local function addRainbowBorder()
     corner.Parent = outer
 end
 
+-- 虹色エフェクトのスレッド起動
 addRainbowBorder()
 task.spawn(function()
     while true do
@@ -315,4 +396,4 @@ task.spawn(function()
 end)
 
 OrionLib:Init()
-print("✅ なべHUBv1 が正常に起動しました！")
+print("✅ なべHUBv1.3 (完全統合版・バグ修正済) が正常に起動しました！")
