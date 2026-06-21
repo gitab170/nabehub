@@ -1,5 +1,5 @@
 -- ==========================================
--- なべHUBv1.3 (Noclip簡易化版)
+-- なべHUBv1.3 完全版 (軽量化済み)
 -- ==========================================
 
 local Players = game:GetService("Players")
@@ -8,6 +8,7 @@ local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion"))()
 if not OrionLib then warn("OrionLib 読み込み失敗") return end
@@ -25,6 +26,7 @@ local MainWindow = OrionLib:MakeWindow({
 local MineTab = MainWindow:MakeTab({ Name = "Mine", Icon = "rbxassetid://4483345998", PremiumOnly = false })
 local PlayerTab = MainWindow:MakeTab({ Name = "プレイヤー", Icon = "rbxassetid://6031094678", PremiumOnly = false })
 local VisualsTab = MainWindow:MakeTab({ Name = "画面", Icon = "rbxassetid://6031094678", PremiumOnly = false })
+local EffectTab = MainWindow:MakeTab({ Name = "エフェクト", Icon = "rbxassetid://6031094678", PremiumOnly = false })
 local ItemsTab = MainWindow:MakeTab({ Name = "物人", Icon = "rbxassetid://6031079977", PremiumOnly = false })
 
 -- ==================== 変数 ====================
@@ -35,17 +37,15 @@ local FOVValue = 70
 
 local SpeedEnabled = false
 local InfiniteJumpEnabled = false
-local NoclipEnabled = false
 local GravityEnabled = false
 
--- ESP変数
+-- ESP
 local ESPEnabled = false
 local RainbowESP = false
 local RainbowSpeed = 0.015
 local AutoUpdateESP = true
 local ESPObjects = {}
 local ESPConnection = nil
-local AutoUpdateConnection = nil
 
 local ShowBox = true
 local ShowName = true
@@ -55,9 +55,23 @@ local ShowTracers = true
 
 local RainbowHue = 0
 
+-- ==================== 起動時チャット ====================
+local function sendChat(message)
+    local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+    if chatEvents then
+        local say = chatEvents:FindFirstChild("SayMessageRequest")
+        if say then say:FireServer(message, "All") end
+    end
+end
+
+task.spawn(function()
+    task.wait(2)
+    sendChat("なべHUB v1.3 起動完了")
+end)
+
 -- ==================== 関数 ====================
 local function applyCharacterSettings(character)
-    task.wait(0.8)
+    task.wait(0.7)
     local hum = character:FindFirstChild("Humanoid")
     if hum then
         if SpeedEnabled then hum.WalkSpeed = WalkSpeedValue end
@@ -107,15 +121,12 @@ local function updateESP()
 
         local cam = Workspace.CurrentCamera
         local rootPos, onScreen = cam:WorldToViewportPoint(root.Position)
-        if not onScreen then
-            for _, obj in pairs(d) do if obj then obj.Visible = false end end
-            continue
-        end
+        if not onScreen then continue end
 
         local headPos = cam:WorldToViewportPoint(head.Position + Vector3.new(0,0.5,0))
         local legPos = cam:WorldToViewportPoint(root.Position - Vector3.new(0,3,0))
         local height = math.abs(headPos.Y - legPos.Y)
-        local width = height * 0.65
+        local width = height * 0.6
 
         local rainbow = getRainbowColor()
 
@@ -155,56 +166,6 @@ local function updateESP()
     end
 end
 
-local function startAutoUpdate()
-    if AutoUpdateConnection then AutoUpdateConnection:Disconnect() end
-    AutoUpdateConnection = task.spawn(function()
-        while true do
-            if ESPEnabled and AutoUpdateESP then
-                for _, p in pairs(Players:GetPlayers()) do
-                    if p ~= LocalPlayer and not ESPObjects[p] then
-                        createESP(p)
-                    end
-                end
-            end
-            task.wait(5)
-        end
-    end)
-end
-
--- ==================== シンプルNoclip ====================
-local noclipConnection = nil
-
-local function toggleNoclip(state)
-    NoclipEnabled = state
-    if state then
-        if noclipConnection then noclipConnection:Disconnect() end
-        noclipConnection = RunService.Stepped:Connect(function()
-            local char = LocalPlayer.Character
-            if char then
-                for _, part in pairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") and part.CanCollide then
-                        part.CanCollide = false
-                    end
-                end
-            end
-        end)
-    else
-        if noclipConnection then 
-            noclipConnection:Disconnect() 
-            noclipConnection = nil 
-        end
-        -- オフ時に元に戻す
-        local char = LocalPlayer.Character
-        if char then
-            for _, part in pairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
-            end
-        end
-    end
-end
-
 -- ==================== UI ====================
 VisualsTab:AddToggle({
     Name = "高性能ESP 有効",
@@ -217,10 +178,8 @@ VisualsTab:AddToggle({
                 if p ~= LocalPlayer and not ESPObjects[p] then createESP(p) end
             end
             ESPConnection = RunService.RenderStepped:Connect(updateESP)
-            startAutoUpdate()
         else
             if ESPConnection then ESPConnection:Disconnect() end
-            if AutoUpdateConnection then AutoUpdateConnection:Disconnect() end
             for _, drawings in pairs(ESPObjects) do
                 for _, obj in pairs(drawings) do if obj then obj:Remove() end end
             end
@@ -229,7 +188,7 @@ VisualsTab:AddToggle({
     end
 })
 
-VisualsTab:AddToggle({Name = "ESP 自動更新 (5秒ごと)", Default = true, Color = Color3.fromRGB(0, 200, 255), Callback = function(v) AutoUpdateESP = v end})
+VisualsTab:AddToggle({Name = "ESP 自動更新 (5秒)", Default = true, Color = Color3.fromRGB(0, 200, 255), Callback = function(v) AutoUpdateESP = v end})
 VisualsTab:AddToggle({Name = "ESP レインボー", Default = false, Color = Color3.fromRGB(255, 100, 255), Callback = function(v) RainbowESP = v end})
 VisualsTab:AddSlider({Name = "レインボー速度", Min = 0.001, Max = 0.1, Default = 0.015, Color = Color3.fromRGB(255, 100, 255), Increment = 0.001, Callback = function(v) RainbowSpeed = v end})
 
@@ -240,7 +199,7 @@ VisualsTab:AddToggle({Name = "体力バー", Default = true, Callback = function
 VisualsTab:AddToggle({Name = "距離 表示", Default = true, Callback = function(v) ShowDistance = v end})
 VisualsTab:AddToggle({Name = "Tracers", Default = true, Callback = function(v) ShowTracers = v end})
 
--- ==================== プレイヤータブ ====================
+-- プレイヤータブ機能
 PlayerTab:AddSection({Name = "移動・物理設定"})
 PlayerTab:AddSlider({Name = "移動速度", Min = 16, Max = 200, Default = 16, Color = Color3.fromRGB(0, 162, 255), Increment = 1, ValueName = " studs/s", Callback = function(v) WalkSpeedValue = v; if SpeedEnabled then local c=LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed = v end end end})
 PlayerTab:AddToggle({Name = "カスタム移動速度有効", Default = false, Color = Color3.fromRGB(0, 162, 255), Callback = function(v) SpeedEnabled = v; local c=LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.WalkSpeed = v and WalkSpeedValue or 16 end end})
@@ -248,27 +207,19 @@ PlayerTab:AddToggle({Name = "カスタム移動速度有効", Default = false, C
 PlayerTab:AddSlider({Name = "ジャンプ力", Min = 50, Max = 400, Default = 50, Color = Color3.fromRGB(0, 162, 255), Increment = 1, ValueName = " power", Callback = function(v) JumpPowerValue = v; local c=LocalPlayer.Character; if c and c:FindFirstChild("Humanoid") then c.Humanoid.JumpPower = v; c.Humanoid.JumpHeight = v*0.6 end end})
 PlayerTab:AddToggle({Name = "無限ジャンプ", Default = false, Color = Color3.fromRGB(0, 162, 255), Callback = function(v) InfiniteJumpEnabled = v end})
 
-UserInputService.JumpRequest:Connect(function()
-    if InfiniteJumpEnabled then
-        local c = LocalPlayer.Character; local h = c and c:FindFirstChild("Humanoid")
-        if h then h:ChangeState("Jumping") end
-    end
-end)
-
-PlayerTab:AddToggle({Name = "壁抜け (Noclip)", Default = false, Color = Color3.fromRGB(0, 162, 255), Callback = toggleNoclip})
-
 PlayerTab:AddSlider({Name = "重力", Min = 0, Max = 400, Default = 196.2, Color = Color3.fromRGB(0, 162, 255), Increment = 0.1, ValueName = " gravity", Callback = function(v) GravityValue = v; if GravityEnabled then Workspace.Gravity = v end end})
 PlayerTab:AddToggle({Name = "カスタム重力有効", Default = false, Color = Color3.fromRGB(0, 162, 255), Callback = function(v) GravityEnabled = v; Workspace.Gravity = v and GravityValue or 196.2 end})
 
 PlayerTab:AddSection({Name = "カメラ設定"})
 PlayerTab:AddSlider({Name = "FOV", Min = 30, Max = 120, Default = 70, Color = Color3.fromRGB(0, 162, 255), Increment = 1, ValueName = "°", Callback = function(v) FOVValue = v; Workspace.CurrentCamera.FieldOfView = v end})
 
--- 物人タブ
-ItemsTab:AddSection({Name = "物人機能"})
-ItemsTab:AddLabel("ここに機能を追加できます")
+-- エフェクトタブ
+EffectTab:AddSection({Name = "視覚エフェクト"})
+EffectTab:AddLabel("ここに虹色枠などのエフェクトを追加できます")
 
+-- ==================== 初期化 ====================
 LocalPlayer.CharacterAdded:Connect(applyCharacterSettings)
 if LocalPlayer.Character then applyCharacterSettings(LocalPlayer.Character) end
 
 OrionLib:Init()
-print("✅ なべHUBv1.3 (Noclip簡易化) 起動完了！")
+print("✅ なべHUBv1.3 完全版 起動完了！")
