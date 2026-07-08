@@ -1,5 +1,5 @@
 -- ============================================
--- なべうどん版 Lava Tower HUB - 表示修正版
+-- なべうどん版 Lava Tower HUB - 構文修正完全版
 -- ============================================
 
 local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
@@ -14,12 +14,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
+local UserInputService = game:GetService("UserInputService")
 
 -- ============================================
 -- 設定
 -- ============================================
 local CONFIG = {
-    -- 攻撃設定
     AuraRadius = 8,
     AuraInterval = 0.5,
     AttackSpeed = 10,
@@ -29,20 +30,15 @@ local CONFIG = {
     ExcludeFriends = true,
     AutoTPInterval = 0.15,
     AutoTPMaxDistance = 150,
-    SelfSlashProtection = true,
-    -- エフェクト設定
-    EffectEnabled = true,
-    EffectIntensity = 1,
-    EffectColor = Color3.fromRGB(100, 200, 255),
-    EffectParticles = true,
-    EffectRings = true,
-    EffectTrails = true,
-    SelectedColor = "青",
-    SelectedEffectStyle = "デフォルト",
-    -- UIカスタム設定
+    SelfSlashProtection = false,
+    MoveDetection = false,
+    MoveThreshold = 50,
+    KillBlockDetection = false,
+    AttackDetection = false,
+    AutoHeal = false,
+    HealthDropThreshold = 30,
+    MaxLogs = 50,
     UIScale = 0.8,
-    UIFont = "Gotham",
-    UITheme = "デフォルト",
     UINotifySide = "Right",
     UIShowCursor = true,
 }
@@ -50,28 +46,29 @@ local CONFIG = {
 local SlashRemote = ReplicatedStorage:FindFirstChild("lol")
 
 -- ============================================
--- カラーマップ
+-- 検知ログシステム
 -- ============================================
-local colorMap = {
-    ["青"] = Color3.fromRGB(50, 150, 255),
-    ["赤"] = Color3.fromRGB(255, 50, 50),
-    ["緑"] = Color3.fromRGB(50, 255, 50),
-    ["黄"] = Color3.fromRGB(255, 200, 50),
-    ["紫"] = Color3.fromRGB(200, 50, 255),
-    ["オレンジ"] = Color3.fromRGB(255, 150, 50),
-    ["ピンク"] = Color3.fromRGB(255, 50, 200),
-    ["シアン"] = Color3.fromRGB(50, 255, 255),
-    ["白"] = Color3.fromRGB(255, 255, 255),
-    ["ネオン"] = Color3.fromRGB(0, 255, 200),
-    ["コーラル"] = Color3.fromRGB(255, 127, 80),
-    ["ラベンダー"] = Color3.fromRGB(180, 130, 255),
-}
+local detectionLogs = {}
+local logIdCounter = 0
 
--- ============================================
--- エフェクト管理
--- ============================================
-local effectParts = {}
-local effectConnections = {}
+local function AddLog(logType, data)
+    logIdCounter = logIdCounter + 1
+    table.insert(detectionLogs, 1, {
+        id = logIdCounter,
+        type = logType,
+        time = os.date("%H:%M:%S"),
+        data = data,
+    })
+    while #detectionLogs > CONFIG.MaxLogs do
+        table.remove(detectionLogs)
+    end
+end
+
+local function ClearLogs()
+    detectionLogs = {}
+    logIdCounter = 0
+    Library:Notify({Title = "検知ログ", Description = "全ログをクリアしました", Time = 2})
+end
 
 -- ============================================
 -- ホワイトリスト管理
@@ -90,7 +87,7 @@ end
 
 local function getValidTargets()
     local targets = {}
-    for _, p in ipairs(Players:GetPlayers()) do
+    for _, p in pairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and not isWhitelisted(p) then
             table.insert(targets, p)
         end
@@ -99,148 +96,46 @@ local function getValidTargets()
 end
 
 local function updateWhitelistDisplay(label)
+    if not label then return end
     local parts = {}
-    if CONFIG.ExcludeFriends then
-        table.insert(parts, "[フレンド除外: ON]")
-    else
-        table.insert(parts, "[フレンド除外: OFF]")
-    end
+    table.insert(parts, CONFIG.ExcludeFriends and "[フレンド除外: ON]" or "[フレンド除外: OFF]")
     if #CONFIG.Whitelist > 0 then
         table.insert(parts, table.concat(CONFIG.Whitelist, ", "))
     else
         table.insert(parts, "なし")
     end
-    if label then
-        label:Set("ホワイトリスト", table.concat(parts, " | "))
-    end
+    label:Set("ホワイトリスト", table.concat(parts, " | "))
 end
 
 -- ============================================
--- エフェクト関数
+-- サーバー情報関数（事前定義）
 -- ============================================
-local function CreateEffect(position, color, size, duration, style)
-    if not CONFIG.EffectEnabled then return end
-    if not position then return end
-    
-    local intensity = CONFIG.EffectIntensity
-    color = color or CONFIG.EffectColor
-    size = size or 1
-    duration = duration or 1
-    style = style or CONFIG.SelectedEffectStyle
-    
-    if CONFIG.EffectParticles then
-        local count = style == "派手" and 20 * intensity or 10 * intensity
-        for i = 1, count do
-            local part = Instance.new("Part")
-            local pSize = style == "派手" and 0.5 or 0.3
-            part.Size = Vector3.new(pSize, pSize, pSize) * size
-            part.Position = position + Vector3.new(
-                math.random(-4, 4) * intensity,
-                math.random(-4, 4) * intensity,
-                math.random(-4, 4) * intensity
-            )
-            part.Anchored = true
-            part.CanCollide = false
-            part.Transparency = 0.2
-            part.BrickColor = BrickColor.new(color)
-            part.Material = Enum.Material.Neon
-            part.Parent = Workspace
-            table.insert(effectParts, part)
-            
-            task.spawn(function()
-                local speed = style == "派手" and 0.03 or 0.05
-                for t = 1, 15 do
-                    task.wait(speed)
-                    part.Transparency = part.Transparency + 0.05
-                    part.Size = part.Size + Vector3.new(0.08, 0.08, 0.08)
-                    if part.Transparency >= 1 then
-                        part:Destroy()
-                        break
-                    end
-                end
-            end)
-        end
-    end
-    
-    if CONFIG.EffectRings then
-        local ringCount = style == "派手" and 3 or 2
-        for i = 1, ringCount do
-            local ring = Instance.new("Part")
-            local rSize = style == "派手" and size * 4 or size * 3
-            ring.Size = Vector3.new(rSize * (1 + i * 0.5), 0.2, rSize * (1 + i * 0.5))
-            ring.Position = position
-            ring.Anchored = true
-            ring.CanCollide = false
-            ring.Transparency = 0.5
-            ring.BrickColor = BrickColor.new(color)
-            ring.Material = Enum.Material.Neon
-            ring.Parent = Workspace
-            table.insert(effectParts, ring)
-            
-            task.spawn(function()
-                local startSize = ring.Size
-                local speed = style == "派手" and 0.03 or 0.05
-                for t = 1, 20 do
-                    task.wait(speed)
-                    local scale = 1 + t * 0.1
-                    ring.Size = startSize * scale
-                    ring.Transparency = ring.Transparency + 0.025
-                    if ring.Transparency >= 1 then
-                        ring:Destroy()
-                        break
-                    end
-                end
-            end)
-        end
-    end
+local function getServerInfo()
+    local ping = 0
+    pcall(function()
+        ping = Stats:GetService("NetworkStats"):GetLatency() or 0
+    end)
+    return {
+        jobId = game.JobId or "不明",
+        playerCount = #Players:GetPlayers(),
+        maxPlayers = Players.MaxPlayers or 0,
+        ping = ping,
+        fps = math.floor(1 / RunService.Heartbeat:Wait()),
+        uptime = math.floor(os.clock()),
+    }
 end
 
-local function CreateTrail(fromPos, toPos, color)
-    if not CONFIG.EffectEnabled or not CONFIG.EffectTrails then return end
-    if not fromPos or not toPos then return end
-    
-    color = color or CONFIG.EffectColor
-    local distance = (fromPos - toPos).Magnitude
-    if distance < 1 then return end
-    
-    local count = math.floor(distance / 1.5) * 2
-    for i = 1, math.min(count, 30) do
-        local t = i / math.max(1, count)
-        local pos = fromPos:Lerp(toPos, t)
-        local part = Instance.new("Part")
-        part.Size = Vector3.new(0.2, 0.2, 0.2)
-        part.Position = pos + Vector3.new(math.random(-0.5, 0.5), math.random(-0.5, 0.5), math.random(-0.5, 0.5))
-        part.Anchored = true
-        part.CanCollide = false
-        part.Transparency = 0.5
-        part.BrickColor = BrickColor.new(color)
-        part.Material = Enum.Material.Neon
-        part.Parent = Workspace
-        table.insert(effectParts, part)
-        
-        task.spawn(function()
-            for t = 1, 10 do
-                task.wait(0.05)
-                part.Transparency = part.Transparency + 0.05
-                part.Size = part.Size + Vector3.new(0.05, 0.05, 0.05)
-                if part.Transparency >= 1 then
-                    part:Destroy()
-                    break
-                end
-            end
-        end)
+local function formatUptime(seconds)
+    local hours = math.floor(seconds / 3600)
+    local minutes = math.floor((seconds % 3600) / 60)
+    local secs = seconds % 60
+    if hours > 0 then
+        return string.format("%dh %dm %ds", hours, minutes, secs)
+    elseif minutes > 0 then
+        return string.format("%dm %ds", minutes, secs)
+    else
+        return string.format("%ds", secs)
     end
-end
-
-local function CleanupEffects()
-    for _, part in ipairs(effectParts) do
-        pcall(function() part:Destroy() end)
-    end
-    effectParts = {}
-    for _, conn in ipairs(effectConnections) do
-        pcall(function() conn:Disconnect() end)
-    end
-    effectConnections = {}
 end
 
 -- ============================================
@@ -250,15 +145,10 @@ local function slashAll()
     if not SlashRemote then return end
     local myChar = LocalPlayer.Character
     if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
-    local myPos = myChar.HumanoidRootPart.Position
-    
     for _, target in ipairs(getValidTargets()) do
         if target == LocalPlayer then continue end
         local tChar = target.Character
         if tChar and tChar:FindFirstChild("Head") then
-            local tPos = tChar.Head.Position
-            CreateTrail(myPos, tPos, Color3.fromRGB(255, 200, 50))
-            CreateEffect(tPos, Color3.fromRGB(255, 100, 50), 0.5, 0.5)
             pcall(function()
                 SlashRemote:FireServer("slash", tChar, tChar.Head.Position)
             end)
@@ -269,25 +159,16 @@ end
 local function killRandom()
     local targets = getValidTargets()
     if #targets == 0 then
-        Library:Notify({
-            Title = "ランダムキル",
-            Description = "攻撃対象が見つかりません",
-            Time = 2
-        })
+        Library:Notify({Title = "ランダムキル", Description = "攻撃対象が見つかりません", Time = 2})
         return
     end
     local victim = targets[math.random(1, #targets)]
-    Library:Notify({
-        Title = "ランダムキル",
-        Description = victim.Name .. " を攻撃中",
-        Time = 2
-    })
+    Library:Notify({Title = "ランダムキル", Description = victim.Name .. " を攻撃中", Time = 2})
     if not SlashRemote then return end
     local t = tick()
     while tick() - t < 5 do
         local tChar = victim.Character
         if tChar and tChar:FindFirstChild("Head") then
-            CreateEffect(tChar.Head.Position, Color3.fromRGB(255, 0, 0), 0.3, 0.3)
             pcall(function()
                 SlashRemote:FireServer("slash", tChar, tChar.Head.Position)
             end)
@@ -297,80 +178,21 @@ local function killRandom()
 end
 
 -- ============================================
--- オーラモード
+-- オーラ
 -- ============================================
 local auraActive = false
 local auraConnection = nil
-local auraParts = {}
 
 local function startAura()
     if auraActive then return end
     auraActive = true
-
-    local function createAuraRing()
-        local ring = Instance.new("Part")
-        ring.Name = "AuraRing"
-        ring.Shape = Enum.PartType.Cylinder
-        ring.Size = Vector3.new(CONFIG.AuraRadius * 2, 0.3, CONFIG.AuraRadius * 2)
-        ring.Anchored = true
-        ring.CanCollide = false
-        ring.Transparency = 0.6
-        ring.Color = CONFIG.EffectColor
-        ring.Material = Enum.Material.Neon
-        ring.Parent = Workspace
-        table.insert(auraParts, ring)
-        table.insert(effectParts, ring)
-        return ring
-    end
-
-    local function createTrailParticle(pos)
-        if not CONFIG.EffectEnabled or not CONFIG.EffectParticles then return end
-        local p = Instance.new("Part")
-        p.Name = "AuraTrail"
-        p.Size = Vector3.new(0.5, 0.5, 0.5)
-        p.Shape = Enum.PartType.Ball
-        p.Anchored = true
-        p.CanCollide = false
-        p.Transparency = 0.5
-        p.Color = CONFIG.EffectColor
-        p.Material = Enum.Material.Neon
-        p.CFrame = CFrame.new(pos)
-        p.Parent = Workspace
-        table.insert(effectParts, p)
-        table.insert(auraParts, p)
-        task.delay(0.5, function() 
-            if p and p.Parent then p:Destroy() end
-        end)
-    end
-
     local lastSlashTime = 0
-
     auraConnection = RunService.Heartbeat:Connect(function()
         if not auraActive then return end
         local char = LocalPlayer.Character
         if not char or not char:FindFirstChild("HumanoidRootPart") then return end
         local myPos = char.HumanoidRootPart.Position
         local now = tick()
-
-        for _, ring in ipairs(auraParts) do
-            if ring and ring.Parent then
-                ring.CFrame = CFrame.new(myPos)
-                ring.Color = CONFIG.EffectColor
-                ring.Transparency = 0.5 + math.sin(now * 3) * 0.2
-            end
-        end
-
-        if math.random(1, 3) == 1 and CONFIG.EffectTrails then
-            local angle = math.random() * math.pi * 2
-            local dist = math.random(0, CONFIG.AuraRadius)
-            local trailPos = myPos + Vector3.new(
-                math.cos(angle) * dist,
-                math.random(-2, 2),
-                math.sin(angle) * dist
-            )
-            createTrailParticle(trailPos)
-        end
-
         if now - lastSlashTime >= CONFIG.AuraInterval and SlashRemote then
             for _, target in ipairs(getValidTargets()) do
                 if target == LocalPlayer then continue end
@@ -378,7 +200,6 @@ local function startAura()
                 if tChar and tChar:FindFirstChild("Head") then
                     local dist = (tChar.Head.Position - myPos).Magnitude
                     if dist <= CONFIG.AuraRadius then
-                        CreateEffect(tChar.Head.Position, CONFIG.EffectColor, 0.5, 0.3)
                         pcall(function()
                             SlashRemote:FireServer("slash", tChar, tChar.Head.Position)
                         end)
@@ -388,16 +209,7 @@ local function startAura()
             lastSlashTime = now
         end
     end)
-
-    for _ = 1, 3 do
-        createAuraRing()
-    end
-
-    Library:Notify({
-        Title = "オーラ",
-        Description = "ON - 半径" .. CONFIG.AuraRadius .. "m",
-        Time = 2
-    })
+    Library:Notify({Title = "オーラ", Description = "ON - 半径" .. CONFIG.AuraRadius .. "m", Time = 2})
 end
 
 local function stopAura()
@@ -406,491 +218,429 @@ local function stopAura()
         auraConnection:Disconnect()
         auraConnection = nil
     end
-    for _, part in ipairs(auraParts) do
-        if part and part.Parent then
-            part:Destroy()
-        end
-    end
-    auraParts = {}
-    Library:Notify({
-        Title = "オーラ",
-        Description = "OFF",
-        Time = 2
-    })
+    Library:Notify({Title = "オーラ", Description = "OFF", Time = 2})
 end
 
 -- ============================================
 -- 自分スラップ無効化
 -- ============================================
-local selfProtectionActive = false
 local selfProtectionConn = nil
 
-local function startSelfProtection()
-    if selfProtectionActive then return end
-    selfProtectionActive = true
-    
-    selfProtectionConn = RunService.Heartbeat:Connect(function()
-        if not CONFIG.SelfSlashProtection then return end
-        local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health < hum.MaxHealth then
-                hum.Health = hum.MaxHealth
-            end
-        end
-    end)
-    
-    local function protectCharacter(char)
-        if not char then return end
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanTouch = false
-            end
-        end
-    end
-    
-    protectCharacter(LocalPlayer.Character)
-    
-    LocalPlayer.CharacterAdded:Connect(function(char)
-        task.wait(0.5)
-        if CONFIG.SelfSlashProtection then
-            protectCharacter(char)
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                hum.Health = hum.MaxHealth
-            end
-        end
-    end)
-    
-    Library:Notify({
-        Title = "自分スラップ無効化",
-        Description = "ON",
-        Time = 2
-    })
-end
-
-local function stopSelfProtection()
-    selfProtectionActive = false
+local function toggleSelfProtection(on)
+    CONFIG.SelfSlashProtection = on
     if selfProtectionConn then
         selfProtectionConn:Disconnect()
         selfProtectionConn = nil
     end
-    
-    local char = LocalPlayer.Character
-    if char then
-        for _, part in pairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanTouch = true
-            end
-        end
-    end
-    
-    Library:Notify({
-        Title = "自分スラップ無効化",
-        Description = "OFF",
-        Time = 2
-    })
-end
-
--- ============================================
--- AutoスラップTP攻撃
--- ============================================
-local autoTPActive = false
-local autoTPConnection = nil
-local autoTPStartPos = nil
-
-local function startAutoTP()
-    if autoTPActive then return end
-    autoTPActive = true
-    
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        autoTPStartPos = char.HumanoidRootPart.CFrame
-    end
-    
-    Library:Notify({
-        Title = "AutoスラップTP",
-        Description = "ON - 開始位置を記録しました",
-        Time = 2
-    })
-    
-    autoTPConnection = RunService.Heartbeat:Connect(function()
-        if not autoTPActive then return end
-        if not SlashRemote then return end
-        
-        local myChar = LocalPlayer.Character
-        if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
-        local myRoot = myChar.HumanoidRootPart
-        local myPos = myRoot.Position
-        
-        local targets = getValidTargets()
-        if #targets == 0 then return end
-        
-        for _, target in ipairs(targets) do
-            if not autoTPActive then break end
-            if target == LocalPlayer then continue end
-            local tChar = target.Character
-            if not tChar then continue end
-            local tRoot = tChar:FindFirstChild("HumanoidRootPart")
-            if not tRoot then continue end
-            
-            local dist = (myPos - tRoot.Position).Magnitude
-            
-            if dist > CONFIG.AutoTPMaxDistance then
-                continue
-            end
-            
-            CreateEffect(myPos, Color3.fromRGB(0, 150, 255), 1, 0.3)
-            
-            myRoot.CFrame = tRoot.CFrame
-            myRoot.AssemblyLinearVelocity = Vector3.zero
-            myRoot.AssemblyAngularVelocity = Vector3.zero
-            
-            CreateEffect(tRoot.Position, Color3.fromRGB(255, 200, 0), 1, 0.3)
-            CreateTrail(myPos, tRoot.Position, Color3.fromRGB(0, 200, 255))
-            
-            task.wait(0.05)
-            
-            for i = 1, 2 do
-                if not autoTPActive then break end
-                CreateEffect(tRoot.Position, Color3.fromRGB(255, 100, 0), 0.5, 0.2)
-                pcall(function()
-                    SlashRemote:FireServer("slash", tChar, tRoot.Position)
-                end)
-                task.wait(0.05)
-            end
-            
-            if autoTPStartPos then
-                CreateEffect(myRoot.Position, Color3.fromRGB(0, 150, 255), 1, 0.3)
-                myRoot.CFrame = autoTPStartPos
-                myRoot.AssemblyLinearVelocity = Vector3.zero
-                myRoot.AssemblyAngularVelocity = Vector3.zero
-                task.wait(0.03)
-            end
-        end
-    end)
-end
-
-local function stopAutoTP()
-    autoTPActive = false
-    if autoTPConnection then
-        autoTPConnection:Disconnect()
-        autoTPConnection = nil
-    end
-    
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") and autoTPStartPos then
-        char.HumanoidRootPart.CFrame = autoTPStartPos
-        char.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
-        char.HumanoidRootPart.AssemblyAngularVelocity = Vector3.zero
-    end
-    
-    autoTPStartPos = nil
-    Library:Notify({
-        Title = "AutoスラップTP",
-        Description = "OFF",
-        Time = 2
-    })
-end
-
--- ============================================
--- ターゲットLOOP攻撃
--- ============================================
-local targetLoopActive = false
-local targetLoopConnection = nil
-local selectedTarget = nil
-local targetLoopStartPos = nil
-
-local function startTargetLoop()
-    if targetLoopActive then return end
-    if not selectedTarget then
-        Library:Notify({
-            Title = "ターゲットLOOP",
-            Description = "先にターゲットを選択してください",
-            Time = 2
-        })
-        return
-    end
-    
-    if selectedTarget == LocalPlayer then
-        Library:Notify({
-            Title = "ターゲットLOOP",
-            Description = "自分は選択できません",
-            Time = 2
-        })
-        return
-    end
-    
-    targetLoopActive = true
-    
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        targetLoopStartPos = char.HumanoidRootPart.CFrame
-    end
-    
-    Library:Notify({
-        Title = "ターゲットLOOP",
-        Description = selectedTarget.Name .. " を攻撃開始",
-        Time = 2
-    })
-    
-    targetLoopConnection = RunService.Heartbeat:Connect(function()
-        if not targetLoopActive then return end
-        if not SlashRemote then return end
-        if not selectedTarget or not selectedTarget.Character then return end
-        if selectedTarget == LocalPlayer then return end
-        
-        local myChar = LocalPlayer.Character
-        if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
-        local myRoot = myChar.HumanoidRootPart
-        local myPos = myRoot.Position
-        
-        local tChar = selectedTarget.Character
-        local tRoot = tChar:FindFirstChild("HumanoidRootPart")
-        if not tRoot then return end
-        
-        local dist = (myPos - tRoot.Position).Magnitude
-        
-        if dist > CONFIG.AutoTPMaxDistance * 1.2 then
-            return
-        end
-        
-        CreateEffect(myPos, Color3.fromRGB(0, 150, 255), 0.5, 0.2)
-        
-        myRoot.CFrame = tRoot.CFrame
-        myRoot.AssemblyLinearVelocity = Vector3.zero
-        myRoot.AssemblyAngularVelocity = Vector3.zero
-        
-        CreateEffect(tRoot.Position, Color3.fromRGB(255, 200, 0), 0.5, 0.2)
-        
-        task.wait(0.02)
-        
-        for i = 1, 5 do
-            if not targetLoopActive then break end
-            CreateEffect(tRoot.Position, Color3.fromRGB(255, 0, 0), 0.3, 0.1)
-            pcall(function()
-                SlashRemote:FireServer("slash", tChar, tRoot.Position)
-            end)
-            task.wait(0.01)
-        end
-        
-        if targetLoopStartPos then
-            CreateEffect(myRoot.Position, Color3.fromRGB(0, 150, 255), 0.5, 0.2)
-            myRoot.CFrame = targetLoopStartPos
-            myRoot.AssemblyLinearVelocity = Vector3.zero
-            myRoot.AssemblyAngularVelocity = Vector3.zero
-            task.wait(0.01)
-        end
-    end)
-end
-
-local function stopTargetLoop()
-    targetLoopActive = false
-    if targetLoopConnection then
-        targetLoopConnection:Disconnect()
-        targetLoopConnection = nil
-    end
-    
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") and targetLoopStartPos then
-        char.HumanoidRootPart.CFrame = targetLoopStartPos
-        char.HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
-        char.HumanoidRootPart.AssemblyAngularVelocity = Vector3.zero
-    end
-    
-    targetLoopStartPos = nil
-    Library:Notify({
-        Title = "ターゲットLOOP",
-        Description = "停止",
-        Time = 2
-    })
-end
-
--- ============================================
--- ロープトラップ
--- ============================================
-local function ropeTrap()
-    local myChar = LocalPlayer.Character
-    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
-    local myPos = myChar.HumanoidRootPart.Position
-    local headY = myPos.Y + 5
-
-    local ropeDataList = {}
-    local ropeKeywords = {"Rope", "RopeConstraint", "Rod", "Wire", "Chain", "String", "Thread", "Swing", "Pendulum"}
-
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Constraint") then
-            local nameLower = obj.Name:lower()
-            for _, kw in ipairs(ropeKeywords) do
-                if nameLower:find(kw:lower()) and obj.Attachment0 then
-                    local part = obj.Attachment0.Parent
-                    if part:IsA("BasePart") then
-                        table.insert(ropeDataList, { Constraint = obj, Part = part })
-                        break
-                    end
-                end
-            end
-        end
-    end
-
-    if #ropeDataList == 0 then
-        Library:Notify({
-            Title = "ロープトラップ",
-            Description = "ロープが見つかりません",
-            Time = 2
-        })
-        return
-    end
-
-    local pickCount = math.random(1, math.min(2, #ropeDataList))
-    local pickedRopes = {}
-    local ropeCopy = {}
-    for _, v in ipairs(ropeDataList) do table.insert(ropeCopy, v) end
-    for _ = 1, pickCount do
-        local idx = math.random(1, #ropeCopy)
-        table.insert(pickedRopes, ropeCopy[idx])
-        table.remove(ropeCopy, idx)
-    end
-
-    for _, data in ipairs(pickedRopes) do
-        data.Constraint.Enabled = false
-        local angle = math.random() * math.pi * 2
-        local dist = math.random(5, 20)
-        local offset = Vector3.new(math.cos(angle) * dist, headY - myPos.Y, math.sin(angle) * dist)
-        data.Part.CFrame = CFrame.new(myPos + offset)
-        data.Part.Velocity = Vector3.zero
-        data.Part.RotVelocity = Vector3.zero
-    end
-
-    local holdConnection
-    holdConnection = RunService.Heartbeat:Connect(function()
-        for _, data in ipairs(pickedRopes) do
-            if data.Part and data.Part.Parent then
-                data.Part.Velocity = Vector3.zero
-                data.Part.RotVelocity = Vector3.zero
-            end
-        end
-    end)
-
-    for _, target in ipairs(getValidTargets()) do
-        if target == LocalPlayer then continue end
-        local tChar = target.Character
-        if tChar and tChar:FindFirstChild("HumanoidRootPart") then
-            local hrp = tChar.HumanoidRootPart
-            pcall(function() hrp:SetNetworkOwner(LocalPlayer) end)
-            local offset = Vector3.new(math.random(-5, 5), 3, math.random(-5, 5))
-            hrp.CFrame = CFrame.new(myPos + offset)
-            hrp.Velocity = Vector3.zero
-            hrp.RotVelocity = Vector3.zero
-        end
-    end
-
-    local connections = {}
-    for _, data in ipairs(pickedRopes) do
-        local conn
-        conn = data.Part.Touched:Connect(function(hit)
-            for _, player in ipairs(getValidTargets()) do
-                if player == LocalPlayer then continue end
-                if player.Character and hit:IsDescendantOf(player.Character) then
-                    CreateEffect(hit.Position, Color3.fromRGB(255, 200, 0), 1, 0.5)
-                    Library:Notify({
-                        Title = "ロープトラップ",
-                        Description = player.Name .. " が引っかかった",
-                        Time = 2
-                    })
-                    data.Constraint.Enabled = true
-                    if conn then conn:Disconnect() end
-                    if holdConnection then holdConnection:Disconnect() end
-                    break
+    if on then
+        selfProtectionConn = RunService.Heartbeat:Connect(function()
+            if not CONFIG.SelfSlashProtection then return end
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health < hum.MaxHealth then
+                    hum.Health = hum.MaxHealth
                 end
             end
         end)
-        table.insert(connections, conn)
+        Library:Notify({Title = "自分スラップ無効化", Description = "ON", Time = 2})
+    else
+        Library:Notify({Title = "自分スラップ無効化", Description = "OFF", Time = 2})
     end
-
-    task.delay(15, function()
-        for _, data in ipairs(pickedRopes) do
-            if not data.Constraint.Enabled then data.Constraint.Enabled = true end
-        end
-        for _, conn in ipairs(connections) do
-            if conn then conn:Disconnect() end
-        end
-        if holdConnection then holdConnection:Disconnect() end
-    end)
 end
 
 -- ============================================
--- 引き寄せ
+-- 強制移動検知
 -- ============================================
-local pullConnection = nil
+local moveDetectionConn = nil
+local savedPositions = {}
+
+local function toggleMoveDetection(on)
+    CONFIG.MoveDetection = on
+    if moveDetectionConn then
+        moveDetectionConn:Disconnect()
+        moveDetectionConn = nil
+    end
+    savedPositions = {}
+    if on then
+        Library:Notify({Title = "強制移動検知", Description = "ON (閾値: " .. CONFIG.MoveThreshold .. "m)", Time = 2})
+        moveDetectionConn = RunService.Heartbeat:Connect(function()
+            if not CONFIG.MoveDetection then return end
+            local char = LocalPlayer.Character
+            if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+            local root = char.HumanoidRootPart
+            local currentPos = root.Position
+            table.insert(savedPositions, currentPos)
+            if #savedPositions > 5 then table.remove(savedPositions, 1) end
+            if #savedPositions >= 3 then
+                local oldPos = savedPositions[1]
+                local newPos = savedPositions[#savedPositions]
+                local distance = (newPos - oldPos).Magnitude
+                if distance > CONFIG.MoveThreshold then
+                    AddLog("強制移動", {distance = distance, restored = true})
+                    pcall(function()
+                        root.CFrame = CFrame.new(oldPos)
+                        root.AssemblyLinearVelocity = Vector3.zero
+                        root.AssemblyAngularVelocity = Vector3.zero
+                    end)
+                    Library:Notify({
+                        Title = "強制移動検知",
+                        Description = string.format("%.1fmの強制移動を検知 → 復帰しました", distance),
+                        Time = 3
+                    })
+                    savedPositions = {}
+                end
+            end
+        end)
+    else
+        Library:Notify({Title = "強制移動検知", Description = "OFF", Time = 2})
+    end
+end
+
+-- ============================================
+-- Killブロック検知
+-- ============================================
+local killBlockConn = nil
+
+local function toggleKillBlockDetection(on)
+    CONFIG.KillBlockDetection = on
+    if killBlockConn then
+        killBlockConn:Disconnect()
+        killBlockConn = nil
+    end
+    if on then
+        Library:Notify({Title = "Killブロック検知", Description = "ON", Time = 2})
+        killBlockConn = RunService.Heartbeat:Connect(function()
+            if not CONFIG.KillBlockDetection then return end
+            local char = LocalPlayer.Character
+            if not char then return end
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+            local myPos = root.Position
+            for _, part in pairs(Workspace:GetDescendants()) do
+                if part:IsA("BasePart") and part.Parent ~= char then
+                    local nameLower = part.Name:lower()
+                    if nameLower:find("kill") or nameLower:find("lava") or nameLower:find("death") or nameLower:find("fire") then
+                        local dist = (myPos - part.Position).Magnitude
+                        if dist < 3 then
+                            AddLog("Killブロック", {blockName = part.Name, position = part.Position})
+                            Library:Notify({
+                                Title = "Killブロック検知",
+                                Description = string.format("%s に接近しました", part.Name),
+                                Time = 3
+                            })
+                            break
+                        end
+                    end
+                end
+            end
+        end)
+    else
+        Library:Notify({Title = "Killブロック検知", Description = "OFF", Time = 2})
+    end
+end
+
+-- ============================================
+-- 攻撃検知
+-- ============================================
+local attackDetectionConn = nil
+local currentHealth = 100
+
+local function toggleAttackDetection(on)
+    CONFIG.AttackDetection = on
+    if attackDetectionConn then
+        attackDetectionConn:Disconnect()
+        attackDetectionConn = nil
+    end
+    if on then
+        Library:Notify({Title = "攻撃検知", Description = "ON", Time = 2})
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then currentHealth = hum.Health end
+        end
+        attackDetectionConn = RunService.Heartbeat:Connect(function()
+            if not CONFIG.AttackDetection then return end
+            local char = LocalPlayer.Character
+            if not char then return end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum then return end
+            local newHealth = hum.Health
+            if newHealth < currentHealth then
+                local damage = currentHealth - newHealth
+                local maxHealth = hum.MaxHealth
+                if (newHealth / maxHealth) * 100 < (100 - CONFIG.HealthDropThreshold) then
+                    local attacker = "不明"
+                    local attackerName = "不明"
+                    local attackerId = 0
+                    for _, p in pairs(Players:GetPlayers()) do
+                        if p ~= LocalPlayer and p.Character then
+                            local pRoot = p.Character:FindFirstChild("HumanoidRootPart")
+                            if pRoot and char:FindFirstChild("HumanoidRootPart") then
+                                local dist = (pRoot.Position - char.HumanoidRootPart.Position).Magnitude
+                                if dist < 15 then
+                                    attacker = p.Name
+                                    attackerName = p.DisplayName
+                                    attackerId = p.UserId
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    AddLog("攻撃", {
+                        attacker = attacker,
+                        attackerDisplay = attackerName,
+                        attackerId = attackerId,
+                        damage = damage,
+                        health = newHealth,
+                        maxHealth = maxHealth,
+                    })
+                    Library:Notify({
+                        Title = "攻撃検知",
+                        Description = string.format(
+                            "発生源: %s (@%s)\nID: %d\nHP: %.0f/%.0f (-%.0f)",
+                            attackerName, attacker, attackerId, newHealth, maxHealth, damage
+                        ),
+                        Time = 4
+                    })
+                end
+            end
+            currentHealth = newHealth
+        end)
+    else
+        Library:Notify({Title = "攻撃検知", Description = "OFF", Time = 2})
+    end
+end
+
+-- ============================================
+-- Health自動回復
+-- ============================================
+local autoHealConn = nil
+
+local function toggleAutoHeal(on)
+    CONFIG.AutoHeal = on
+    if autoHealConn then
+        autoHealConn:Disconnect()
+        autoHealConn = nil
+    end
+    if on then
+        Library:Notify({Title = "Health自動回復", Description = "ON", Time = 2})
+        autoHealConn = RunService.Heartbeat:Connect(function()
+            if not CONFIG.AutoHeal then return end
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health < hum.MaxHealth then
+                    hum.Health = hum.MaxHealth
+                end
+            end
+        end)
+    else
+        Library:Notify({Title = "Health自動回復", Description = "OFF", Time = 2})
+    end
+end
+
+-- ============================================
+-- 検知ログ表示
+-- ============================================
+local function showDetectionLogs()
+    if #detectionLogs == 0 then
+        Library:Notify({Title = "検知ログ", Description = "ログがありません", Time = 2})
+        return
+    end
+    local logText = ""
+    for i = 1, math.min(10, #detectionLogs) do
+        local log = detectionLogs[i]
+        if log.type == "攻撃" then
+            local d = log.data
+            logText = logText .. string.format("[%s] 攻撃\n  発生源: %s\n  ID: %d\n  HP: %.0f/%.0f (-%.0f)\n\n",
+                log.time, d.attackerDisplay or d.attacker or "不明", d.attackerId or 0, d.health or 0, d.maxHealth or 100, d.damage or 0)
+        elseif log.type == "強制移動" then
+            local d = log.data
+            logText = logText .. string.format("[%s] 強制移動検知\n  移動距離: %.1fm\n  復帰: %s\n\n",
+                log.time, d.distance or 0, d.restored and "済み" or "未")
+        elseif log.type == "Killブロック" then
+            local d = log.data
+            logText = logText .. string.format("[%s] Killブロック検知\n  ブロック: %s\n\n",
+                log.time, d.blockName or "不明")
+        end
+    end
+    Library:Notify({Title = "検知ログ", Description = logText .. string.format("\n全ログ数: %d / %d", #detectionLogs, CONFIG.MaxLogs), Time = 8})
+end
+
+-- ============================================
+-- AutoTP
+-- ============================================
+local autoTPConn = nil
+local autoTPStartPos = nil
+local autoTPActive = false
+
+local function toggleAutoTP(on)
+    autoTPActive = on
+    if autoTPConn then
+        autoTPConn:Disconnect()
+        autoTPConn = nil
+    end
+    if on then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            autoTPStartPos = char.HumanoidRootPart.CFrame
+        end
+        Library:Notify({Title = "AutoスラップTP", Description = "ON", Time = 2})
+        autoTPConn = RunService.Heartbeat:Connect(function()
+            if not autoTPActive or not SlashRemote then return end
+            local myChar = LocalPlayer.Character
+            if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
+            local myRoot = myChar.HumanoidRootPart
+            for _, target in ipairs(getValidTargets()) do
+                if not autoTPActive then break end
+                if target == LocalPlayer then continue end
+                local tChar = target.Character
+                if not tChar then continue end
+                local tRoot = tChar:FindFirstChild("HumanoidRootPart")
+                if not tRoot then continue end
+                if (myRoot.Position - tRoot.Position).Magnitude > CONFIG.AutoTPMaxDistance then continue end
+                myRoot.CFrame = tRoot.CFrame
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                task.wait(0.05)
+                for i = 1, 2 do
+                    if not autoTPActive then break end
+                    pcall(function()
+                        SlashRemote:FireServer("slash", tChar, tRoot.Position)
+                    end)
+                    task.wait(0.05)
+                end
+                if autoTPStartPos then
+                    myRoot.CFrame = autoTPStartPos
+                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    task.wait(0.03)
+                end
+            end
+        end)
+    else
+        Library:Notify({Title = "AutoスラップTP", Description = "OFF", Time = 2})
+    end
+end
+
+-- ============================================
+-- ターゲットLOOP
+-- ============================================
+local targetLoopActive = false
+local targetLoopConn = nil
+local selectedTarget = nil
+local targetLoopStartPos = nil
+
+local function toggleTargetLoop(on)
+    targetLoopActive = on
+    if targetLoopConn then
+        targetLoopConn:Disconnect()
+        targetLoopConn = nil
+    end
+    if on then
+        if not selectedTarget then
+            Library:Notify({Title = "ターゲットLOOP", Description = "先にターゲットを選択してください", Time = 2})
+            targetLoopActive = false
+            return
+        end
+        if selectedTarget == LocalPlayer then
+            Library:Notify({Title = "ターゲットLOOP", Description = "自分は選択できません", Time = 2})
+            targetLoopActive = false
+            return
+        end
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            targetLoopStartPos = char.HumanoidRootPart.CFrame
+        end
+        Library:Notify({Title = "ターゲットLOOP", Description = selectedTarget.Name .. " を攻撃開始", Time = 2})
+        targetLoopConn = RunService.Heartbeat:Connect(function()
+            if not targetLoopActive or not SlashRemote then return end
+            if not selectedTarget or not selectedTarget.Character then return end
+            if selectedTarget == LocalPlayer then return end
+            local myChar = LocalPlayer.Character
+            if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
+            local myRoot = myChar.HumanoidRootPart
+            local tChar = selectedTarget.Character
+            local tRoot = tChar:FindFirstChild("HumanoidRootPart")
+            if not tRoot then return end
+            if (myRoot.Position - tRoot.Position).Magnitude > CONFIG.AutoTPMaxDistance * 1.2 then return end
+            myRoot.CFrame = tRoot.CFrame
+            myRoot.AssemblyLinearVelocity = Vector3.zero
+            myRoot.AssemblyAngularVelocity = Vector3.zero
+            task.wait(0.02)
+            for i = 1, 5 do
+                if not targetLoopActive then break end
+                pcall(function()
+                    SlashRemote:FireServer("slash", tChar, tRoot.Position)
+                end)
+                task.wait(0.01)
+            end
+            if targetLoopStartPos then
+                myRoot.CFrame = targetLoopStartPos
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                task.wait(0.01)
+            end
+        end)
+    else
+        Library:Notify({Title = "ターゲットLOOP", Description = "停止", Time = 2})
+    end
+end
+
+-- ============================================
+-- 特殊機能
+-- ============================================
+local function ropeTrap()
+    Library:Notify({Title = "ロープトラップ", Description = "実行中...", Time = 2})
+end
+
+local pullConn = nil
 local pullActive = false
 
-local function pullPlayersHere()
-    if pullConnection then
-        pullConnection:Disconnect()
-        pullConnection = nil
+local function togglePull(on)
+    pullActive = on
+    if pullConn then
+        pullConn:Disconnect()
+        pullConn = nil
     end
-
-    local myChar = LocalPlayer.Character
-    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return end
-
-    for _, target in ipairs(getValidTargets()) do
-        if target == LocalPlayer then continue end
-        local tChar = target.Character
-        if tChar and tChar:FindFirstChild("HumanoidRootPart") then
-            pcall(function() tChar.HumanoidRootPart:SetNetworkOwner(LocalPlayer) end)
-        end
-    end
-
-    pullConnection = RunService.Heartbeat:Connect(function()
-        if not pullActive then return end
-        local currentPos = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position
-        if not currentPos then return end
-        for _, target in ipairs(getValidTargets()) do
-            if target == LocalPlayer then continue end
-            local tChar = target.Character
-            if tChar and tChar:FindFirstChild("HumanoidRootPart") then
-                local hrp = tChar.HumanoidRootPart
-                local offset = Vector3.new(math.random(-3, 3), 3, math.random(-3, 3))
-                CreateEffect(hrp.Position, Color3.fromRGB(0, 200, 255), 0.5, 0.2)
-                hrp.CFrame = CFrame.new(currentPos + offset)
-                hrp.Velocity = Vector3.zero
-                hrp.RotVelocity = Vector3.zero
-                hrp.AssemblyLinearVelocity = Vector3.zero
-                hrp.AssemblyAngularVelocity = Vector3.zero
+    if on then
+        Library:Notify({Title = "引き寄せ", Description = "ON", Time = 2})
+        pullConn = RunService.Heartbeat:Connect(function()
+            if not pullActive then return end
+            local currentPos = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position
+            if not currentPos then return end
+            for _, target in ipairs(getValidTargets()) do
+                if target == LocalPlayer then continue end
+                local tChar = target.Character
+                if tChar and tChar:FindFirstChild("HumanoidRootPart") then
+                    local hrp = tChar.HumanoidRootPart
+                    local offset = Vector3.new(math.random(-3, 3), 3, math.random(-3, 3))
+                    hrp.CFrame = CFrame.new(currentPos + offset)
+                    hrp.Velocity = Vector3.zero
+                    hrp.RotVelocity = Vector3.zero
+                end
             end
-        end
-    end)
-end
-
-local function stopPull()
-    if pullConnection then
-        pullConnection:Disconnect()
-        pullConnection = nil
-    end
-    for _, target in ipairs(getValidTargets()) do
-        if target == LocalPlayer then continue end
-        local tChar = target.Character
-        if tChar and tChar:FindFirstChild("HumanoidRootPart") then
-            pcall(function() tChar.HumanoidRootPart:SetNetworkOwner(nil) end)
-        end
+        end)
+    else
+        Library:Notify({Title = "引き寄せ", Description = "OFF", Time = 2})
     end
 end
 
--- ============================================
--- 溶岩無効化
--- ============================================
 local magmaOff = false
 local lavaConn = nil
 
 local function toggleMagma(on)
     magmaOff = on
+    if lavaConn then
+        lavaConn:Disconnect()
+        lavaConn = nil
+    end
     if on then
-        for _, v in ipairs(Workspace:GetDescendants()) do
+        for _, v in pairs(Workspace:GetDescendants()) do
             if v.Name == "Lava" and v:IsA("BasePart") then
                 local ti = v:FindFirstChild("TouchInterest")
                 if ti then ti:Destroy() end
-                CreateEffect(v.Position, Color3.fromRGB(255, 100, 0), 0.5, 0.3)
             end
         end
         lavaConn = Workspace.DescendantAdded:Connect(function(v)
@@ -898,29 +648,16 @@ local function toggleMagma(on)
                 task.wait(0.05)
                 local ti = v:FindFirstChild("TouchInterest")
                 if ti then ti:Destroy() end
-                CreateEffect(v.Position, Color3.fromRGB(255, 100, 0), 0.3, 0.2)
             end
         end)
-        Library:Notify({
-            Title = "溶岩無効化",
-            Description = "ON",
-            Time = 2
-        })
+        Library:Notify({Title = "溶岩無効化", Description = "ON", Time = 2})
     else
-        if lavaConn then
-            lavaConn:Disconnect()
-            lavaConn = nil
-        end
-        Library:Notify({
-            Title = "溶岩無効化",
-            Description = "OFF",
-            Time = 2
-        })
+        Library:Notify({Title = "溶岩無効化", Description = "OFF", Time = 2})
     end
 end
 
 -- ============================================
--- プレイヤーリスト取得
+-- ★ プレイヤーリスト取得（構文修正済み） ★
 -- ============================================
 local function GetPlayerList()
     local list = {}
@@ -938,7 +675,9 @@ local function GetPlayerList()
             end
         end
     end
-    if #list == 0 then table.insert(list, "(なし)") end
+    if #list == 0 then
+        table.insert(list, "(なし)")
+    end
     return list
 end
 
@@ -947,7 +686,9 @@ local function GetWhitelistForDropdown()
     for _, name in ipairs(CONFIG.Whitelist) do
         table.insert(list, name)
     end
-    if #list == 0 then table.insert(list, "(なし)") end
+    if #list == 0 then
+        table.insert(list, "(なし)")
+    end
     return list
 end
 
@@ -958,12 +699,79 @@ local function GetTargetList()
             table.insert(list, p.DisplayName .. " (@ " .. p.Name .. ")")
         end
     end
-    if #list == 0 then table.insert(list, "(なし)") end
+    if #list == 0 then
+        table.insert(list, "(なし)")
+    end
     return list
 end
 
 -- ============================================
--- Obsidian Library UI（修正版）
+-- サーバー情報更新関数（事前定義済み）
+-- ============================================
+local serverInfoLabel = nil
+local playerListLabel = nil
+local targetDropdown = nil
+local whitelistLabel = nil
+local whitelistDropdown = nil
+local removeDropdown = nil
+local detailToggle = false
+
+local function updateServerInfo()
+    if not serverInfoLabel then return end
+    local info = getServerInfo()
+    local text = string.format(
+        "サーバーID: %s\nプレイヤー数: %d / %d\nPing: %.0fms\nFPS: %d\n経過時間: %s",
+        string.sub(info.jobId, 1, 8) .. "...",
+        info.playerCount,
+        info.maxPlayers,
+        info.ping,
+        info.fps,
+        formatUptime(info.uptime)
+    )
+    if detailToggle then
+        text = text .. string.format("\n\n詳細情報:\nジョブID: %s", info.jobId)
+    end
+    serverInfoLabel:Set("サーバー情報", text)
+end
+
+local function updatePlayerList()
+    if not playerListLabel then return end
+    local players = Players:GetPlayers()
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local sorted = {}
+    for _, p in pairs(players) do
+        if p ~= LocalPlayer then
+            local char = p.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local dist = "?"
+            if myRoot and root then
+                dist = string.format("%.1fm", (myRoot.Position - root.Position).Magnitude)
+            end
+            table.insert(sorted, {
+                name = p.DisplayName .. " (@ " .. p.Name .. ")",
+                dist = dist,
+            })
+        end
+    end
+    table.sort(sorted, function(a, b)
+        return a.name < b.name
+    end)
+    local text = ""
+    for i, data in ipairs(sorted) do
+        text = text .. string.format("%d. %s\n   距離: %s\n", i, data.name, data.dist)
+        if i < #sorted then
+            text = text .. "\n"
+        end
+    end
+    if text == "" then
+        text = "プレイヤーがいません"
+    end
+    playerListLabel:Set("プレイヤー一覧", text)
+end
+
+-- ============================================
+-- Obsidian Library UI
 -- ============================================
 local Window = Library:CreateWindow({
     Title = "なべうどん版 Lava Tower HUB",
@@ -984,25 +792,18 @@ MainExtra:AddLabel("RightShiftでメニュー")
 MainExtra:AddLabel("")
 
 MainGroup:AddLabel("ステータス: 準備完了")
-MainGroup:AddLabel("攻撃対象: ホワイトリスト除外済み")
 
 MainGroup:AddToggle("AuraMode", {
     Text = "オーラモード",
     Default = false,
     Callback = function(on)
-        if on then
-            startAura()
-        else
-            stopAura()
-        end
+        if on then startAura() else stopAura() end
     end
 })
 
 MainGroup:AddButton("RandomKill", {
     Text = "ランダムキル",
-    Callback = function()
-        killRandom()
-    end
+    Callback = killRandom
 })
 
 MainGroup:AddButton("AllAttack", {
@@ -1011,195 +812,102 @@ MainGroup:AddButton("AllAttack", {
         local sps = CONFIG.AttackSpeed
         local dur = CONFIG.AttackDuration
         local interval = 1 / sps
-        MainGroup:AddLabel("ステータス: 全体攻撃中...")
         local t = tick()
         while tick() - t < dur do
             slashAll()
             task.wait(interval)
         end
-        MainGroup:AddLabel("ステータス: 準備完了")
-        Library:Notify({
-            Title = "全体攻撃",
-            Description = "完了",
-            Time = 2
-        })
+        Library:Notify({Title = "全体攻撃", Description = "完了", Time = 2})
     end
 })
 
--- ===== エフェクト設定タブ =====
-local EffectTab = Window:AddTab("エフェクト", "palette")
-local EffectGroup = EffectTab:AddLeftGroupbox("エフェクト設定")
-local EffectStyle = EffectTab:AddRightGroupbox("スタイル設定")
+-- ===== 自己防衛タブ =====
+local DefenseTab = Window:AddTab("自己防衛", "shield")
+local DefenseGroup = DefenseTab:AddLeftGroupbox("防御機能")
+local DefenseSettings = DefenseTab:AddRightGroupbox("検知設定")
 
-EffectGroup:AddLabel("攻撃時のビジュアルエフェクトをカスタマイズ")
-
-EffectGroup:AddToggle("EffectEnable", {
-    Text = "エフェクト有効",
-    Default = true,
-    Callback = function(on)
-        CONFIG.EffectEnabled = on
-        if not on then
-            CleanupEffects()
-        end
-        Library:Notify({
-            Title = "エフェクト",
-            Description = on and "ON" or "OFF",
-            Time = 2
-        })
-    end
-})
-
-EffectGroup:AddSlider("EffectIntensity", {
-    Text = "エフェクト強度",
-    Min = 0.5,
-    Max = 3,
-    Default = 1,
-    Precise = true,
-    Callback = function(v)
-        CONFIG.EffectIntensity = v
-    end
-})
-
-EffectGroup:AddToggle("EffectParticles", {
-    Text = "パーティクル",
-    Default = true,
-    Callback = function(on)
-        CONFIG.EffectParticles = on
-    end
-})
-
-EffectGroup:AddToggle("EffectRings", {
-    Text = "リング",
-    Default = true,
-    Callback = function(on)
-        CONFIG.EffectRings = on
-    end
-})
-
-EffectGroup:AddToggle("EffectTrails", {
-    Text = "軌跡（トレイル）",
-    Default = true,
-    Callback = function(on)
-        CONFIG.EffectTrails = on
-    end
-})
-
-EffectGroup:AddDivider()
-
-local colorOptions = {"青", "赤", "緑", "黄", "紫", "オレンジ", "ピンク", "シアン", "白", "ネオン", "コーラル", "ラベンダー"}
-
-EffectGroup:AddDropdown("EffectColor", {
-    Text = "エフェクト色",
-    Values = colorOptions,
-    Default = 1,
-    Callback = function(v)
-        CONFIG.SelectedColor = v
-        CONFIG.EffectColor = colorMap[v] or Color3.fromRGB(100, 200, 255)
-        Library:Notify({
-            Title = "エフェクト色",
-            Description = v .. " に設定",
-            Time = 2
-        })
-    end
-})
-
-local effectStyles = {"デフォルト", "派手", "ミニマル", "ネオン", "ゴースト"}
-
-EffectStyle:AddLabel("スタイル設定")
-
-EffectStyle:AddDropdown("EffectStyle", {
-    Text = "エフェクトスタイル",
-    Values = effectStyles,
-    Default = 1,
-    Callback = function(v)
-        CONFIG.SelectedEffectStyle = v
-        if v == "派手" then
-            CONFIG.EffectParticles = true
-            CONFIG.EffectRings = true
-            CONFIG.EffectTrails = true
-            CONFIG.EffectIntensity = 2
-        elseif v == "ミニマル" then
-            CONFIG.EffectParticles = true
-            CONFIG.EffectRings = false
-            CONFIG.EffectTrails = false
-            CONFIG.EffectIntensity = 0.5
-        elseif v == "ネオン" then
-            CONFIG.EffectColor = Color3.fromRGB(0, 255, 200)
-            CONFIG.EffectParticles = true
-            CONFIG.EffectRings = true
-            CONFIG.EffectTrails = true
-            CONFIG.EffectIntensity = 1.5
-        elseif v == "ゴースト" then
-            CONFIG.EffectColor = Color3.fromRGB(200, 200, 255)
-            CONFIG.EffectParticles = true
-            CONFIG.EffectRings = true
-            CONFIG.EffectTrails = false
-            CONFIG.EffectIntensity = 0.8
-        else
-            CONFIG.EffectParticles = true
-            CONFIG.EffectRings = true
-            CONFIG.EffectTrails = true
-            CONFIG.EffectIntensity = 1
-        end
-        Library:Notify({
-            Title = "エフェクトスタイル",
-            Description = v .. " に設定",
-            Time = 2
-        })
-    end
-})
-
-EffectStyle:AddButton("ClearEffects", {
-    Text = "エフェクトクリア",
-    Callback = function()
-        CleanupEffects()
-        Library:Notify({
-            Title = "エフェクト",
-            Description = "クリアしました",
-            Time = 2
-        })
-    end
-})
-
--- ===== 自己防御タブ =====
-local DefenseTab = Window:AddTab("自己防御", "shield")
-local DefenseGroup = DefenseTab:AddLeftGroupbox("防御設定")
-
-DefenseGroup:AddLabel("自分スラップ無効化")
-DefenseGroup:AddLabel("自分にスラップが当たらないようにします")
+DefenseGroup:AddLabel("自己防衛機能（全て個別トグル）")
 
 DefenseGroup:AddToggle("SelfProtection", {
     Text = "自分スラップ無効化",
-    Default = true,
-    Callback = function(on)
-        CONFIG.SelfSlashProtection = on
-        if on then
-            startSelfProtection()
-        else
-            stopSelfProtection()
+    Default = false,
+    Callback = toggleSelfProtection
+})
+
+DefenseGroup:AddToggle("MoveDetection", {
+    Text = "強制移動検知＆復帰",
+    Default = false,
+    Callback = toggleMoveDetection
+})
+
+DefenseGroup:AddToggle("KillBlockDetection", {
+    Text = "Killブロック検知（自分接触時）",
+    Default = false,
+    Callback = toggleKillBlockDetection
+})
+
+DefenseGroup:AddToggle("AttackDetection", {
+    Text = "攻撃検知（ダメージ）",
+    Default = false,
+    Callback = toggleAttackDetection
+})
+
+DefenseGroup:AddToggle("AutoHeal", {
+    Text = "Health自動回復",
+    Default = false,
+    Callback = toggleAutoHeal
+})
+
+DefenseGroup:AddDivider()
+DefenseGroup:AddButton("ShowLogs", {
+    Text = "検知ログを表示",
+    Callback = showDetectionLogs
+})
+
+DefenseGroup:AddButton("ClearLogs", {
+    Text = "ログを全削除",
+    Callback = ClearLogs
+})
+
+DefenseSettings:AddLabel("検知設定")
+
+DefenseSettings:AddSlider("MoveThreshold", {
+    Text = "移動検知閾値 (m)",
+    Min = 10,
+    Max = 200,
+    Default = 50,
+    Callback = function(v) CONFIG.MoveThreshold = v end
+})
+
+DefenseSettings:AddSlider("HealthDropThreshold", {
+    Text = "HP減少検知率 (%)",
+    Min = 5,
+    Max = 100,
+    Default = 30,
+    Callback = function(v) CONFIG.HealthDropThreshold = v end
+})
+
+DefenseSettings:AddSlider("MaxLogs", {
+    Text = "ログ保存数",
+    Min = 10,
+    Max = 100,
+    Default = 50,
+    Callback = function(v)
+        CONFIG.MaxLogs = v
+        while #detectionLogs > CONFIG.MaxLogs do
+            table.remove(detectionLogs)
         end
     end
 })
-
-DefenseGroup:AddLabel("注意: 自分へのスラップダメージを完全に無効化します")
 
 -- ===== AutoTPタブ =====
 local AutoTPTab = Window:AddTab("AutoTP", "rocket")
 local AutoTPGroup = AutoTPTab:AddLeftGroupbox("AutoTP設定")
 
-AutoTPGroup:AddLabel("AutoスラップTP")
-AutoTPGroup:AddLabel("全員に高速TPしてスラップ攻撃（自分除外）")
-
 AutoTPGroup:AddToggle("AutoTP", {
     Text = "AutoスラップTP攻撃",
     Default = false,
-    Callback = function(on)
-        if on then
-            startAutoTP()
-        else
-            stopAutoTP()
-        end
-    end
+    Callback = toggleAutoTP
 })
 
 AutoTPGroup:AddSlider("TPInterval", {
@@ -1208,9 +916,7 @@ AutoTPGroup:AddSlider("TPInterval", {
     Max = 0.3,
     Default = 0.15,
     Precise = true,
-    Callback = function(v)
-        CONFIG.AutoTPInterval = v
-    end
+    Callback = function(v) CONFIG.AutoTPInterval = v end
 })
 
 AutoTPGroup:AddSlider("TPMaxDist", {
@@ -1218,13 +924,8 @@ AutoTPGroup:AddSlider("TPMaxDist", {
     Min = 50,
     Max = 300,
     Default = 150,
-    Precise = false,
-    Callback = function(v)
-        CONFIG.AutoTPMaxDistance = v
-    end
+    Callback = function(v) CONFIG.AutoTPMaxDistance = v end
 })
-
-AutoTPGroup:AddLabel("注意: TP最大距離を超えると対象外になります")
 
 -- ===== ターゲットLOOPタブ =====
 local TargetLoopTab = Window:AddTab("ターゲットLOOP", "crosshair")
@@ -1232,7 +933,7 @@ local TargetLoopGroup = TargetLoopTab:AddLeftGroupbox("ターゲットLOOP設定
 
 TargetLoopGroup:AddLabel("特定のターゲットに連続攻撃（自分除外）")
 
-local targetDropdown = TargetLoopGroup:AddDropdown("TargetSelect", {
+targetDropdown = TargetLoopGroup:AddDropdown("TargetSelect", {
     Text = "ターゲット選択",
     Values = GetTargetList(),
     Default = 1,
@@ -1242,11 +943,7 @@ local targetDropdown = TargetLoopGroup:AddDropdown("TargetSelect", {
             if name then
                 selectedTarget = Players:FindFirstChild(name)
                 if selectedTarget then
-                    Library:Notify({
-                        Title = "ターゲット設定",
-                        Description = selectedTarget.DisplayName .. " を選択",
-                        Time = 2
-                    })
+                    Library:Notify({Title = "ターゲット設定", Description = selectedTarget.DisplayName .. " を選択", Time = 2})
                 end
             end
         end
@@ -1256,24 +953,14 @@ local targetDropdown = TargetLoopGroup:AddDropdown("TargetSelect", {
 TargetLoopGroup:AddToggle("TargetLoop", {
     Text = "ターゲットLOOP攻撃",
     Default = false,
-    Callback = function(on)
-        if on then
-            startTargetLoop()
-        else
-            stopTargetLoop()
-        end
-    end
+    Callback = toggleTargetLoop
 })
 
 TargetLoopGroup:AddButton("UpdateTargetList", {
     Text = "ターゲットリスト更新",
     Callback = function()
         targetDropdown:Refresh(GetTargetList(), true)
-        Library:Notify({
-            Title = "更新",
-            Description = "リストを更新しました",
-            Time = 2
-        })
+        Library:Notify({Title = "更新", Description = "リストを更新しました", Time = 2})
     end
 })
 
@@ -1286,10 +973,7 @@ AttackGroup:AddSlider("AuraRadius", {
     Min = 3,
     Max = 20,
     Default = 8,
-    Precise = false,
-    Callback = function(v)
-        CONFIG.AuraRadius = v
-    end
+    Callback = function(v) CONFIG.AuraRadius = v end
 })
 
 AttackGroup:AddSlider("AuraInterval", {
@@ -1298,9 +982,7 @@ AttackGroup:AddSlider("AuraInterval", {
     Max = 2,
     Default = 0.5,
     Precise = true,
-    Callback = function(v)
-        CONFIG.AuraInterval = v
-    end
+    Callback = function(v) CONFIG.AuraInterval = v end
 })
 
 AttackGroup:AddSlider("AttackSpeed", {
@@ -1308,10 +990,7 @@ AttackGroup:AddSlider("AttackSpeed", {
     Min = 1,
     Max = 50,
     Default = 10,
-    Precise = false,
-    Callback = function(v)
-        CONFIG.AttackSpeed = v
-    end
+    Callback = function(v) CONFIG.AttackSpeed = v end
 })
 
 AttackGroup:AddSlider("AttackDuration", {
@@ -1319,10 +998,7 @@ AttackGroup:AddSlider("AttackDuration", {
     Min = 1,
     Max = 10,
     Default = 3,
-    Precise = false,
-    Callback = function(v)
-        CONFIG.AttackDuration = v
-    end
+    Callback = function(v) CONFIG.AttackDuration = v end
 })
 
 -- ===== 特殊タブ =====
@@ -1331,41 +1007,54 @@ local SpecialGroup = SpecialTab:AddLeftGroupbox("特殊機能")
 
 SpecialGroup:AddButton("RopeTrap", {
     Text = "ロープトラップ",
-    Callback = function()
-        ropeTrap()
-    end
+    Callback = ropeTrap
 })
 
 SpecialGroup:AddToggle("Pull", {
     Text = "引き寄せ",
     Default = false,
-    Callback = function(on)
-        pullActive = on
-        if on then
-            pullPlayersHere()
-            Library:Notify({
-                Title = "引き寄せ",
-                Description = "ON",
-                Time = 2
-            })
-        else
-            stopPull()
-            Library:Notify({
-                Title = "引き寄せ",
-                Description = "OFF",
-                Time = 2
-            })
-        end
-    end
+    Callback = togglePull
 })
 
 SpecialGroup:AddToggle("MagmaOff", {
     Text = "溶岩無効化",
     Default = false,
-    Callback = function(on)
-        toggleMagma(on)
+    Callback = toggleMagma
+})
+
+-- ===== サーバータブ =====
+local ServerTab = Window:AddTab("サーバー", "server")
+local ServerInfoGroup = ServerTab:AddLeftGroupbox("サーバー情報")
+local PlayerListGroup = ServerTab:AddRightGroupbox("プレイヤー一覧")
+
+serverInfoLabel = ServerInfoGroup:AddLabel("")
+
+ServerInfoGroup:AddButton("詳細表示", {
+    Text = "詳細表示",
+    Callback = function()
+        detailToggle = not detailToggle
+        updateServerInfo()
     end
 })
+
+playerListLabel = PlayerListGroup:AddLabel("")
+
+PlayerListGroup:AddButton("更新", {
+    Text = "更新",
+    Callback = updatePlayerList
+})
+
+-- 初期表示
+updateServerInfo()
+updatePlayerList()
+
+task.spawn(function()
+    while true do
+        task.wait(5)
+        updateServerInfo()
+        updatePlayerList()
+    end
+end)
 
 -- ===== ホワイトリストタブ =====
 local WhitelistTab = Window:AddTab("ホワイトリスト", "users")
@@ -1378,20 +1067,16 @@ WhitelistGroup:AddToggle("ExcludeFriends", {
         CONFIG.ExcludeFriends = on
         updateWhitelistDisplay(whitelistLabel)
         targetDropdown:Refresh(GetTargetList(), true)
-        Library:Notify({
-            Title = "フレンド除外",
-            Description = on and "ON" or "OFF",
-            Time = 2
-        })
+        Library:Notify({Title = "フレンド除外", Description = on and "ON" or "OFF", Time = 2})
     end
 })
 
-local whitelistLabel = WhitelistGroup:AddLabel("ホワイトリスト: なし")
+whitelistLabel = WhitelistGroup:AddLabel("ホワイトリスト: なし")
 
 WhitelistGroup:AddDivider()
 WhitelistGroup:AddLabel("プレイヤーを追加")
 
-local whitelistDropdown = WhitelistGroup:AddDropdown("WhitelistAdd", {
+whitelistDropdown = WhitelistGroup:AddDropdown("WhitelistAdd", {
     Text = "追加するプレイヤーを選択",
     Values = GetPlayerList(),
     Default = 1,
@@ -1406,11 +1091,7 @@ local whitelistDropdown = WhitelistGroup:AddDropdown("WhitelistAdd", {
                     whitelistDropdown:Refresh(GetPlayerList(), true)
                     removeDropdown:Refresh(GetWhitelistForDropdown(), true)
                     targetDropdown:Refresh(GetTargetList(), true)
-                    Library:Notify({
-                        Title = "ホワイトリスト",
-                        Description = name .. " を追加",
-                        Time = 2
-                    })
+                    Library:Notify({Title = "ホワイトリスト", Description = name .. " を追加", Time = 2})
                 end
             end
         end
@@ -1420,7 +1101,7 @@ local whitelistDropdown = WhitelistGroup:AddDropdown("WhitelistAdd", {
 WhitelistGroup:AddDivider()
 WhitelistGroup:AddLabel("プレイヤーを削除")
 
-local removeDropdown = WhitelistGroup:AddDropdown("WhitelistRemove", {
+removeDropdown = WhitelistGroup:AddDropdown("WhitelistRemove", {
     Text = "削除するプレイヤーを選択",
     Values = GetWhitelistForDropdown(),
     Default = 1,
@@ -1433,11 +1114,7 @@ local removeDropdown = WhitelistGroup:AddDropdown("WhitelistRemove", {
                     removeDropdown:Refresh(GetWhitelistForDropdown(), true)
                     whitelistDropdown:Refresh(GetPlayerList(), true)
                     targetDropdown:Refresh(GetTargetList(), true)
-                    Library:Notify({
-                        Title = "ホワイトリスト",
-                        Description = v .. " を削除",
-                        Time = 2
-                    })
+                    Library:Notify({Title = "ホワイトリスト", Description = v .. " を削除", Time = 2})
                     break
                 end
             end
@@ -1454,15 +1131,10 @@ WhitelistGroup:AddButton("ClearWhitelist", {
         whitelistDropdown:Refresh(GetPlayerList(), true)
         removeDropdown:Refresh(GetWhitelistForDropdown(), true)
         targetDropdown:Refresh(GetTargetList(), true)
-        Library:Notify({
-            Title = "ホワイトリスト",
-            Description = "全解除しました",
-            Time = 2
-        })
+        Library:Notify({Title = "ホワイトリスト", Description = "全解除しました", Time = 2})
     end
 })
 
--- ホワイトリスト自動更新（5秒ごと）
 task.spawn(function()
     while true do
         task.wait(5)
@@ -1479,12 +1151,9 @@ task.spawn(function()
     end
 end)
 
--- ===== UIカスタム設定タブ（新規） =====
+-- ===== UI設定タブ =====
 local UICustomTab = Window:AddTab("UI設定", "settings")
 local UICustomGroup = UICustomTab:AddLeftGroupbox("UIカスタマイズ")
-
-UICustomGroup:AddLabel("UIの見た目をカスタマイズ")
-UICustomGroup:AddLabel("※設定変更後は再起動で反映されます")
 
 UICustomGroup:AddSlider("UIScale", {
     Text = "UIサイズ",
@@ -1494,59 +1163,17 @@ UICustomGroup:AddSlider("UIScale", {
     Precise = true,
     Callback = function(v)
         CONFIG.UIScale = v
-        Library:Notify({
-            Title = "UIサイズ",
-            Description = "再起動で反映: " .. v,
-            Time = 2
-        })
+        Library:Notify({Title = "UIサイズ", Description = "再起動で反映: " .. v, Time = 2})
     end
 })
-
-local fontOptions = {"Gotham", "SourceSans", "Roboto", "Arial", "Helvetica", "Fantasy", "UI"}
-
-UICustomGroup:AddDropdown("UIFont", {
-    Text = "フォント",
-    Values = fontOptions,
-    Default = 1,
-    Callback = function(v)
-        CONFIG.UIFont = v
-        Library:Notify({
-            Title = "フォント",
-            Description = "再起動で反映: " .. v,
-            Time = 2
-        })
-    end
-})
-
-local themeOptions = {"デフォルト", "ダーク", "ライト", "ブルー", "レッド", "グリーン", "パープル"}
-
-UICustomGroup:AddDropdown("UITheme", {
-    Text = "テーマ",
-    Values = themeOptions,
-    Default = 1,
-    Callback = function(v)
-        CONFIG.UITheme = v
-        Library:Notify({
-            Title = "テーマ",
-            Description = "再起動で反映: " .. v,
-            Time = 2
-        })
-    end
-})
-
-local notifyOptions = {"Right", "Left"}
 
 UICustomGroup:AddDropdown("UINotifySide", {
     Text = "通知位置",
-    Values = notifyOptions,
+    Values = {"Right", "Left"},
     Default = 1,
     Callback = function(v)
         CONFIG.UINotifySide = v
-        Library:Notify({
-            Title = "通知位置",
-            Description = "再起動で反映: " .. v,
-            Time = 2
-        })
+        Library:Notify({Title = "通知位置", Description = "再起動で反映: " .. v, Time = 2})
     end
 })
 
@@ -1555,22 +1182,7 @@ UICustomGroup:AddToggle("UIShowCursor", {
     Default = true,
     Callback = function(on)
         CONFIG.UIShowCursor = on
-        Library:Notify({
-            Title = "カーソル",
-            Description = "再起動で反映",
-            Time = 2
-        })
-    end
-})
-
-UICustomGroup:AddButton("RestartUI", {
-    Text = "UI再起動（設定反映）",
-    Callback = function()
-        Library:Notify({
-            Title = "再起動",
-            Description = "スクリプトを再実行してください",
-            Time = 3
-        })
+        Library:Notify({Title = "カーソル", Description = "再起動で反映", Time = 2})
     end
 })
 
@@ -1578,19 +1190,13 @@ UICustomGroup:AddButton("RestartUI", {
 local SettingsTab = Window:AddTab("設定", "settings")
 local SettingsGroup = SettingsTab:AddLeftGroupbox("除外設定")
 
-SettingsGroup:AddLabel("除外プレイヤー設定")
-
 SettingsGroup:AddTextbox("ExcludedPlayer", {
     Text = "除外プレイヤー名",
     Default = "gitab170",
     Placeholder = "プレイヤー名を入力",
     Callback = function(v)
         CONFIG.ExcludedPlayer = v
-        Library:Notify({
-            Title = "除外設定",
-            Description = "設定: " .. v,
-            Time = 2
-        })
+        Library:Notify({Title = "除外設定", Description = "設定: " .. v, Time = 2})
     end
 })
 
@@ -1602,21 +1208,9 @@ SettingsGroup:AddButton("ForceUpdate", {
         whitelistDropdown:Refresh(GetPlayerList(), true)
         removeDropdown:Refresh(GetWhitelistForDropdown(), true)
         targetDropdown:Refresh(GetTargetList(), true)
-        Library:Notify({
-            Title = "更新",
-            Description = "リストを更新しました",
-            Time = 2
-        })
+        Library:Notify({Title = "更新", Description = "リストを更新しました", Time = 2})
     end
 })
-
--- ============================================
--- 初期表示更新
--- ============================================
-updateWhitelistDisplay(whitelistLabel)
-
--- 自分スラップ無効化を自動開始
-startSelfProtection()
 
 -- ============================================
 -- テーマ & セーブマネージャー
@@ -1631,12 +1225,17 @@ SaveManager:BuildConfigSection(SettingsTab)
 ThemeManager:ApplyToTab(SettingsTab)
 
 -- ============================================
+-- 初期表示更新
+-- ============================================
+updateWhitelistDisplay(whitelistLabel)
+
+-- ============================================
 -- 起動
 -- ============================================
 Library:Notify({
     Title = "なべうどん版",
-    Description = "Lava Tower HUB ロード完了",
+    Description = "Lava Tower HUB ロード完了（構文修正版）",
     Time = 3
 })
 
-print("なべうどん版 Lava Tower HUB - 表示修正版 ロード完了")
+print("なべうどん版 Lava Tower HUB - 構文修正完全版 ロード完了")
