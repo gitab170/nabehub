@@ -1,5 +1,13 @@
--- OrionLib 読み込み
-local OrionLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/jadpy/suki/refs/heads/main/orion"))()
+-- ============================================
+-- なべうどん版 Lava Tower HUB - 表示修正版
+-- ============================================
+
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+Library.ForceCheckbox = false
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -31,15 +39,15 @@ local CONFIG = {
     EffectTrails = true,
     SelectedColor = "青",
     SelectedEffectStyle = "デフォルト",
+    -- UIカスタム設定
+    UIScale = 0.8,
+    UIFont = "Gotham",
+    UITheme = "デフォルト",
+    UINotifySide = "Right",
+    UIShowCursor = true,
 }
 
 local SlashRemote = ReplicatedStorage:FindFirstChild("lol")
-
--- ============================================
--- エフェクト管理
--- ============================================
-local effectParts = {}
-local effectConnections = {}
 
 -- ============================================
 -- カラーマップ
@@ -58,6 +66,12 @@ local colorMap = {
     ["コーラル"] = Color3.fromRGB(255, 127, 80),
     ["ラベンダー"] = Color3.fromRGB(180, 130, 255),
 }
+
+-- ============================================
+-- エフェクト管理
+-- ============================================
+local effectParts = {}
+local effectConnections = {}
 
 -- ============================================
 -- ホワイトリスト管理
@@ -255,17 +269,17 @@ end
 local function killRandom()
     local targets = getValidTargets()
     if #targets == 0 then
-        OrionLib:MakeNotification({
-            Name = "ランダムキル",
-            Content = "攻撃対象が見つかりません",
+        Library:Notify({
+            Title = "ランダムキル",
+            Description = "攻撃対象が見つかりません",
             Time = 2
         })
         return
     end
     local victim = targets[math.random(1, #targets)]
-    OrionLib:MakeNotification({
-        Name = "ランダムキル",
-        Content = victim.Name .. " を攻撃中",
+    Library:Notify({
+        Title = "ランダムキル",
+        Description = victim.Name .. " を攻撃中",
         Time = 2
     })
     if not SlashRemote then return end
@@ -379,9 +393,9 @@ local function startAura()
         createAuraRing()
     end
 
-    OrionLib:MakeNotification({
-        Name = "オーラ",
-        Content = "ON - 半径" .. CONFIG.AuraRadius .. "m",
+    Library:Notify({
+        Title = "オーラ",
+        Description = "ON - 半径" .. CONFIG.AuraRadius .. "m",
         Time = 2
     })
 end
@@ -398,9 +412,9 @@ local function stopAura()
         end
     end
     auraParts = {}
-    OrionLib:MakeNotification({
-        Name = "オーラ",
-        Content = "OFF",
+    Library:Notify({
+        Title = "オーラ",
+        Description = "OFF",
         Time = 2
     })
 end
@@ -448,9 +462,9 @@ local function startSelfProtection()
         end
     end)
     
-    OrionLib:MakeNotification({
-        Name = "自分スラップ無効化",
-        Content = "ON",
+    Library:Notify({
+        Title = "自分スラップ無効化",
+        Description = "ON",
         Time = 2
     })
 end
@@ -471,9 +485,9 @@ local function stopSelfProtection()
         end
     end
     
-    OrionLib:MakeNotification({
-        Name = "自分スラップ無効化",
-        Content = "OFF",
+    Library:Notify({
+        Title = "自分スラップ無効化",
+        Description = "OFF",
         Time = 2
     })
 end
@@ -494,9 +508,9 @@ local function startAutoTP()
         autoTPStartPos = char.HumanoidRootPart.CFrame
     end
     
-    OrionLib:MakeNotification({
-        Name = "AutoスラップTP",
-        Content = "ON - 開始位置を記録しました",
+    Library:Notify({
+        Title = "AutoスラップTP",
+        Description = "ON - 開始位置を記録しました",
         Time = 2
     })
     
@@ -572,9 +586,9 @@ local function stopAutoTP()
     end
     
     autoTPStartPos = nil
-    OrionLib:MakeNotification({
-        Name = "AutoスラップTP",
-        Content = "OFF",
+    Library:Notify({
+        Title = "AutoスラップTP",
+        Description = "OFF",
         Time = 2
     })
 end
@@ -590,18 +604,18 @@ local targetLoopStartPos = nil
 local function startTargetLoop()
     if targetLoopActive then return end
     if not selectedTarget then
-        OrionLib:MakeNotification({
-            Name = "ターゲットLOOP",
-            Content = "先にターゲットを選択してください",
+        Library:Notify({
+            Title = "ターゲットLOOP",
+            Description = "先にターゲットを選択してください",
             Time = 2
         })
         return
     end
     
     if selectedTarget == LocalPlayer then
-        OrionLib:MakeNotification({
-            Name = "ターゲットLOOP",
-            Content = "自分は選択できません",
+        Library:Notify({
+            Title = "ターゲットLOOP",
+            Description = "自分は選択できません",
             Time = 2
         })
         return
@@ -614,9 +628,9 @@ local function startTargetLoop()
         targetLoopStartPos = char.HumanoidRootPart.CFrame
     end
     
-    OrionLib:MakeNotification({
-        Name = "ターゲットLOOP",
-        Content = selectedTarget.Name .. " を攻撃開始",
+    Library:Notify({
+        Title = "ターゲットLOOP",
+        Description = selectedTarget.Name .. " を攻撃開始",
         Time = 2
     })
     
@@ -685,9 +699,9 @@ local function stopTargetLoop()
     end
     
     targetLoopStartPos = nil
-    OrionLib:MakeNotification({
-        Name = "ターゲットLOOP",
-        Content = "停止",
+    Library:Notify({
+        Title = "ターゲットLOOP",
+        Description = "停止",
         Time = 2
     })
 end
@@ -720,7 +734,11 @@ local function ropeTrap()
     end
 
     if #ropeDataList == 0 then
-        OrionLib:MakeNotification({Name = "ロープトラップ", Content = "ロープが見つかりません", Time = 2})
+        Library:Notify({
+            Title = "ロープトラップ",
+            Description = "ロープが見つかりません",
+            Time = 2
+        })
         return
     end
 
@@ -775,9 +793,9 @@ local function ropeTrap()
                 if player == LocalPlayer then continue end
                 if player.Character and hit:IsDescendantOf(player.Character) then
                     CreateEffect(hit.Position, Color3.fromRGB(255, 200, 0), 1, 0.5)
-                    OrionLib:MakeNotification({
-                        Name = "ロープトラップ",
-                        Content = player.Name .. " が引っかかった",
+                    Library:Notify({
+                        Title = "ロープトラップ",
+                        Description = player.Name .. " が引っかかった",
                         Time = 2
                     })
                     data.Constraint.Enabled = true
@@ -883,13 +901,21 @@ local function toggleMagma(on)
                 CreateEffect(v.Position, Color3.fromRGB(255, 100, 0), 0.3, 0.2)
             end
         end)
-        OrionLib:MakeNotification({Name = "溶岩無効化", Content = "ON", Time = 2})
+        Library:Notify({
+            Title = "溶岩無効化",
+            Description = "ON",
+            Time = 2
+        })
     else
         if lavaConn then
             lavaConn:Disconnect()
             lavaConn = nil
         end
-        OrionLib:MakeNotification({Name = "溶岩無効化", Content = "OFF", Time = 2})
+        Library:Notify({
+            Title = "溶岩無効化",
+            Description = "OFF",
+            Time = 2
+        })
     end
 end
 
@@ -937,28 +963,31 @@ local function GetTargetList()
 end
 
 -- ============================================
--- OrionLib GUI
+-- Obsidian Library UI（修正版）
 -- ============================================
-local Window = OrionLib:MakeWindow({
-    Name = "なべうどん版 Lava Tower HUB",
-    HidePremium = true,
-    SaveConfig = false,
-    IntroEnabled = true,
-    IntroText = "なべうどん版 Lava Tower Hub",
-    IntroIcon = "rbxassetid://4483345998"
+local Window = Library:CreateWindow({
+    Title = "なべうどん版 Lava Tower HUB",
+    Footer = "なべうどん版 Lava Tower HUB",
+    NotifySide = CONFIG.UINotifySide,
+    ShowCustomCursor = CONFIG.UIShowCursor,
+    Scale = CONFIG.UIScale,
 })
 
 -- ===== メインタブ =====
-local MainTab = Window:MakeTab({
-    Name = "メイン",
-    Icon = "rbxassetid://4483345998"
-})
+local MainTab = Window:AddTab("メイン", "home")
+local MainGroup = MainTab:AddLeftGroupbox("メイン機能")
+local MainExtra = MainTab:AddRightGroupbox("情報")
 
-MainTab:AddParagraph("ステータス", "準備完了")
-MainTab:AddParagraph("攻撃対象", "ホワイトリスト除外済み")
+MainExtra:AddLabel("なべうどん版 Lava Tower HUB")
+MainExtra:AddLabel("Obsidian Library版")
+MainExtra:AddLabel("RightShiftでメニュー")
+MainExtra:AddLabel("")
 
-MainTab:AddToggle({
-    Name = "オーラモード",
+MainGroup:AddLabel("ステータス: 準備完了")
+MainGroup:AddLabel("攻撃対象: ホワイトリスト除外済み")
+
+MainGroup:AddToggle("AuraMode", {
+    Text = "オーラモード",
     Default = false,
     Callback = function(on)
         if on then
@@ -969,118 +998,119 @@ MainTab:AddToggle({
     end
 })
 
-MainTab:AddButton({
-    Name = "ランダムキル",
+MainGroup:AddButton("RandomKill", {
+    Text = "ランダムキル",
     Callback = function()
         killRandom()
     end
 })
 
-MainTab:AddButton({
-    Name = "全体攻撃（設定時間）",
+MainGroup:AddButton("AllAttack", {
+    Text = "全体攻撃（設定時間）",
     Callback = function()
         local sps = CONFIG.AttackSpeed
         local dur = CONFIG.AttackDuration
         local interval = 1 / sps
-        MainTab:SetParagraph("ステータス", "全体攻撃中...")
+        MainGroup:AddLabel("ステータス: 全体攻撃中...")
         local t = tick()
         while tick() - t < dur do
             slashAll()
             task.wait(interval)
         end
-        MainTab:SetParagraph("ステータス", "準備完了")
-        OrionLib:MakeNotification({Name = "全体攻撃", Content = "完了", Time = 2})
+        MainGroup:AddLabel("ステータス: 準備完了")
+        Library:Notify({
+            Title = "全体攻撃",
+            Description = "完了",
+            Time = 2
+        })
     end
 })
 
 -- ===== エフェクト設定タブ =====
-local EffectTab = Window:MakeTab({
-    Name = "エフェクト",
-    Icon = "rbxassetid://4483345998"
-})
+local EffectTab = Window:AddTab("エフェクト", "palette")
+local EffectGroup = EffectTab:AddLeftGroupbox("エフェクト設定")
+local EffectStyle = EffectTab:AddRightGroupbox("スタイル設定")
 
-EffectTab:AddParagraph("エフェクト設定", "攻撃時のビジュアルエフェクトをカスタマイズ")
+EffectGroup:AddLabel("攻撃時のビジュアルエフェクトをカスタマイズ")
 
-EffectTab:AddToggle({
-    Name = "エフェクト有効",
+EffectGroup:AddToggle("EffectEnable", {
+    Text = "エフェクト有効",
     Default = true,
     Callback = function(on)
         CONFIG.EffectEnabled = on
         if not on then
             CleanupEffects()
         end
-        OrionLib:MakeNotification({
-            Name = "エフェクト",
-            Content = on and "ON" or "OFF",
+        Library:Notify({
+            Title = "エフェクト",
+            Description = on and "ON" or "OFF",
             Time = 2
         })
     end
 })
 
-EffectTab:AddSlider({
-    Name = "エフェクト強度",
+EffectGroup:AddSlider("EffectIntensity", {
+    Text = "エフェクト強度",
     Min = 0.5,
     Max = 3,
     Default = 1,
-    Increment = 0.1,
+    Precise = true,
     Callback = function(v)
         CONFIG.EffectIntensity = v
     end
 })
 
-EffectTab:AddSection("エフェクト種類")
-
-EffectTab:AddToggle({
-    Name = "パーティクル",
+EffectGroup:AddToggle("EffectParticles", {
+    Text = "パーティクル",
     Default = true,
     Callback = function(on)
         CONFIG.EffectParticles = on
     end
 })
 
-EffectTab:AddToggle({
-    Name = "リング",
+EffectGroup:AddToggle("EffectRings", {
+    Text = "リング",
     Default = true,
     Callback = function(on)
         CONFIG.EffectRings = on
     end
 })
 
-EffectTab:AddToggle({
-    Name = "軌跡（トレイル）",
+EffectGroup:AddToggle("EffectTrails", {
+    Text = "軌跡（トレイル）",
     Default = true,
     Callback = function(on)
         CONFIG.EffectTrails = on
     end
 })
 
-EffectTab:AddSection("カラー設定")
+EffectGroup:AddDivider()
 
 local colorOptions = {"青", "赤", "緑", "黄", "紫", "オレンジ", "ピンク", "シアン", "白", "ネオン", "コーラル", "ラベンダー"}
 
-EffectTab:AddDropdown({
-    Name = "エフェクト色",
-    Default = "青",
-    Options = colorOptions,
+EffectGroup:AddDropdown("EffectColor", {
+    Text = "エフェクト色",
+    Values = colorOptions,
+    Default = 1,
     Callback = function(v)
         CONFIG.SelectedColor = v
         CONFIG.EffectColor = colorMap[v] or Color3.fromRGB(100, 200, 255)
-        OrionLib:MakeNotification({
-            Name = "エフェクト色",
-            Content = v .. " に設定",
+        Library:Notify({
+            Title = "エフェクト色",
+            Description = v .. " に設定",
             Time = 2
         })
     end
 })
 
-EffectTab:AddSection("スタイル設定")
-
 local effectStyles = {"デフォルト", "派手", "ミニマル", "ネオン", "ゴースト"}
 
-EffectTab:AddDropdown({
-    Name = "エフェクトスタイル",
-    Default = "デフォルト",
-    Options = effectStyles,
+EffectStyle:AddLabel("スタイル設定")
+
+EffectStyle:AddDropdown("EffectStyle", {
+    Text = "エフェクトスタイル",
+    Values = effectStyles,
+    Default = 1,
     Callback = function(v)
         CONFIG.SelectedEffectStyle = v
         if v == "派手" then
@@ -1111,36 +1141,35 @@ EffectTab:AddDropdown({
             CONFIG.EffectTrails = true
             CONFIG.EffectIntensity = 1
         end
-        OrionLib:MakeNotification({
-            Name = "エフェクトスタイル",
-            Content = v .. " に設定",
+        Library:Notify({
+            Title = "エフェクトスタイル",
+            Description = v .. " に設定",
             Time = 2
         })
     end
 })
 
-EffectTab:AddButton({
-    Name = "エフェクトクリア",
+EffectStyle:AddButton("ClearEffects", {
+    Text = "エフェクトクリア",
     Callback = function()
         CleanupEffects()
-        OrionLib:MakeNotification({
-            Name = "エフェクト",
-            Content = "クリアしました",
+        Library:Notify({
+            Title = "エフェクト",
+            Description = "クリアしました",
             Time = 2
         })
     end
 })
 
 -- ===== 自己防御タブ =====
-local SelfProtectTab = Window:MakeTab({
-    Name = "自己防御",
-    Icon = "rbxassetid://4483345998"
-})
+local DefenseTab = Window:AddTab("自己防御", "shield")
+local DefenseGroup = DefenseTab:AddLeftGroupbox("防御設定")
 
-SelfProtectTab:AddParagraph("自分スラップ無効化", "自分にスラップが当たらないようにします")
+DefenseGroup:AddLabel("自分スラップ無効化")
+DefenseGroup:AddLabel("自分にスラップが当たらないようにします")
 
-SelfProtectTab:AddToggle({
-    Name = "自分スラップ無効化",
+DefenseGroup:AddToggle("SelfProtection", {
+    Text = "自分スラップ無効化",
     Default = true,
     Callback = function(on)
         CONFIG.SelfSlashProtection = on
@@ -1152,18 +1181,17 @@ SelfProtectTab:AddToggle({
     end
 })
 
-SelfProtectTab:AddParagraph("注意", "自分へのスラップダメージを完全に無効化します")
+DefenseGroup:AddLabel("注意: 自分へのスラップダメージを完全に無効化します")
 
--- ===== AutoスラップTPタブ =====
-local AutoTPTab = Window:MakeTab({
-    Name = "AutoTP",
-    Icon = "rbxassetid://4483345998"
-})
+-- ===== AutoTPタブ =====
+local AutoTPTab = Window:AddTab("AutoTP", "rocket")
+local AutoTPGroup = AutoTPTab:AddLeftGroupbox("AutoTP設定")
 
-AutoTPTab:AddParagraph("AutoスラップTP", "全員に高速TPしてスラップ攻撃（自分除外）")
+AutoTPGroup:AddLabel("AutoスラップTP")
+AutoTPGroup:AddLabel("全員に高速TPしてスラップ攻撃（自分除外）")
 
-AutoTPTab:AddToggle({
-    Name = "AutoスラップTP攻撃",
+AutoTPGroup:AddToggle("AutoTP", {
+    Text = "AutoスラップTP攻撃",
     Default = false,
     Callback = function(on)
         if on then
@@ -1174,51 +1202,49 @@ AutoTPTab:AddToggle({
     end
 })
 
-AutoTPTab:AddSlider({
-    Name = "TP間隔（秒）",
+AutoTPGroup:AddSlider("TPInterval", {
+    Text = "TP間隔（秒）",
     Min = 0.02,
     Max = 0.3,
     Default = 0.15,
-    Increment = 0.01,
+    Precise = true,
     Callback = function(v)
         CONFIG.AutoTPInterval = v
     end
 })
 
-AutoTPTab:AddSlider({
-    Name = "TP最大距離",
+AutoTPGroup:AddSlider("TPMaxDist", {
+    Text = "TP最大距離",
     Min = 50,
     Max = 300,
     Default = 150,
-    Increment = 10,
+    Precise = false,
     Callback = function(v)
         CONFIG.AutoTPMaxDistance = v
     end
 })
 
-AutoTPTab:AddParagraph("注意", "TP最大距離を超えると対象外になります")
+AutoTPGroup:AddLabel("注意: TP最大距離を超えると対象外になります")
 
 -- ===== ターゲットLOOPタブ =====
-local TargetLoopTab = Window:MakeTab({
-    Name = "ターゲットLOOP",
-    Icon = "rbxassetid://4483345998"
-})
+local TargetLoopTab = Window:AddTab("ターゲットLOOP", "crosshair")
+local TargetLoopGroup = TargetLoopTab:AddLeftGroupbox("ターゲットLOOP設定")
 
-TargetLoopTab:AddParagraph("ターゲットLOOP", "特定のターゲットに連続攻撃（自分除外）")
+TargetLoopGroup:AddLabel("特定のターゲットに連続攻撃（自分除外）")
 
-local targetDropdown = TargetLoopTab:AddDropdown({
-    Name = "ターゲット選択",
-    Default = "",
-    Options = GetTargetList(),
+local targetDropdown = TargetLoopGroup:AddDropdown("TargetSelect", {
+    Text = "ターゲット選択",
+    Values = GetTargetList(),
+    Default = 1,
     Callback = function(v)
         if v and v ~= "(なし)" then
             local name = v:match("%@%s*(.-)%)")
             if name then
                 selectedTarget = Players:FindFirstChild(name)
                 if selectedTarget then
-                    OrionLib:MakeNotification({
-                        Name = "ターゲット設定",
-                        Content = selectedTarget.DisplayName .. " を選択",
+                    Library:Notify({
+                        Title = "ターゲット設定",
+                        Description = selectedTarget.DisplayName .. " を選択",
                         Time = 2
                     })
                 end
@@ -1227,8 +1253,8 @@ local targetDropdown = TargetLoopTab:AddDropdown({
     end
 })
 
-TargetLoopTab:AddToggle({
-    Name = "ターゲットLOOP攻撃",
+TargetLoopGroup:AddToggle("TargetLoop", {
+    Text = "ターゲットLOOP攻撃",
     Default = false,
     Callback = function(on)
         if on then
@@ -1239,95 +1265,102 @@ TargetLoopTab:AddToggle({
     end
 })
 
-TargetLoopTab:AddButton({
-    Name = "ターゲットリスト更新",
+TargetLoopGroup:AddButton("UpdateTargetList", {
+    Text = "ターゲットリスト更新",
     Callback = function()
         targetDropdown:Refresh(GetTargetList(), true)
-        OrionLib:MakeNotification({
-            Name = "更新",
-            Content = "リストを更新しました",
+        Library:Notify({
+            Title = "更新",
+            Description = "リストを更新しました",
             Time = 2
         })
     end
 })
 
 -- ===== 攻撃設定タブ =====
-local AttackTab = Window:MakeTab({
-    Name = "攻撃設定",
-    Icon = "rbxassetid://4483345998"
-})
+local AttackTab = Window:AddTab("攻撃設定", "settings")
+local AttackGroup = AttackTab:AddLeftGroupbox("攻撃設定")
 
-AttackTab:AddSlider({
-    Name = "オーラ半径",
+AttackGroup:AddSlider("AuraRadius", {
+    Text = "オーラ半径",
     Min = 3,
     Max = 20,
     Default = 8,
+    Precise = false,
     Callback = function(v)
         CONFIG.AuraRadius = v
     end
 })
 
-AttackTab:AddSlider({
-    Name = "オーラ間隔（秒）",
+AttackGroup:AddSlider("AuraInterval", {
+    Text = "オーラ間隔（秒）",
     Min = 0.1,
     Max = 2,
     Default = 0.5,
-    Increment = 0.1,
+    Precise = true,
     Callback = function(v)
         CONFIG.AuraInterval = v
     end
 })
 
-AttackTab:AddSlider({
-    Name = "全体攻撃速度（回/秒）",
+AttackGroup:AddSlider("AttackSpeed", {
+    Text = "全体攻撃速度（回/秒）",
     Min = 1,
     Max = 50,
     Default = 10,
+    Precise = false,
     Callback = function(v)
         CONFIG.AttackSpeed = v
     end
 })
 
-AttackTab:AddSlider({
-    Name = "全体攻撃時間（秒）",
+AttackGroup:AddSlider("AttackDuration", {
+    Text = "全体攻撃時間（秒）",
     Min = 1,
     Max = 10,
     Default = 3,
+    Precise = false,
     Callback = function(v)
         CONFIG.AttackDuration = v
     end
 })
 
 -- ===== 特殊タブ =====
-local SpecialTab = Window:MakeTab({
-    Name = "特殊",
-    Icon = "rbxassetid://4483345998"
-})
+local SpecialTab = Window:AddTab("特殊", "star")
+local SpecialGroup = SpecialTab:AddLeftGroupbox("特殊機能")
 
-SpecialTab:AddButton({
-    Name = "ロープトラップ",
+SpecialGroup:AddButton("RopeTrap", {
+    Text = "ロープトラップ",
     Callback = function()
         ropeTrap()
     end
 })
 
-SpecialTab:AddToggle({
-    Name = "引き寄せ",
+SpecialGroup:AddToggle("Pull", {
+    Text = "引き寄せ",
     Default = false,
     Callback = function(on)
         pullActive = on
         if on then
             pullPlayersHere()
-            OrionLib:MakeNotification({Name = "引き寄せ", Content = "ON", Time = 2})
+            Library:Notify({
+                Title = "引き寄せ",
+                Description = "ON",
+                Time = 2
+            })
         else
             stopPull()
-            OrionLib:MakeNotification({Name = "引き寄せ", Content = "OFF", Time = 2})
+            Library:Notify({
+                Title = "引き寄せ",
+                Description = "OFF",
+                Time = 2
+            })
         end
     end
 })
 
-SpecialTab:AddToggle({
-    Name = "溶岩無効化",
+SpecialGroup:AddToggle("MagmaOff", {
+    Text = "溶岩無効化",
     Default = false,
     Callback = function(on)
         toggleMagma(on)
@@ -1335,34 +1368,33 @@ SpecialTab:AddToggle({
 })
 
 -- ===== ホワイトリストタブ =====
-local WhitelistTab = Window:MakeTab({
-    Name = "ホワイトリスト",
-    Icon = "rbxassetid://4483345998"
-})
+local WhitelistTab = Window:AddTab("ホワイトリスト", "users")
+local WhitelistGroup = WhitelistTab:AddLeftGroupbox("ホワイトリスト設定")
 
-WhitelistTab:AddToggle({
-    Name = "フレンドを除外",
+WhitelistGroup:AddToggle("ExcludeFriends", {
+    Text = "フレンドを除外",
     Default = true,
     Callback = function(on)
         CONFIG.ExcludeFriends = on
         updateWhitelistDisplay(whitelistLabel)
         targetDropdown:Refresh(GetTargetList(), true)
-        OrionLib:MakeNotification({
-            Name = "フレンド除外",
-            Content = on and "ON" or "OFF",
+        Library:Notify({
+            Title = "フレンド除外",
+            Description = on and "ON" or "OFF",
             Time = 2
         })
     end
 })
 
-local whitelistLabel = WhitelistTab:AddParagraph("ホワイトリスト", "")
+local whitelistLabel = WhitelistGroup:AddLabel("ホワイトリスト: なし")
 
-WhitelistTab:AddSection("プレイヤーを追加")
+WhitelistGroup:AddDivider()
+WhitelistGroup:AddLabel("プレイヤーを追加")
 
-local whitelistDropdown = WhitelistTab:AddDropdown({
-    Name = "追加するプレイヤーを選択",
-    Default = "",
-    Options = GetPlayerList(),
+local whitelistDropdown = WhitelistGroup:AddDropdown("WhitelistAdd", {
+    Text = "追加するプレイヤーを選択",
+    Values = GetPlayerList(),
+    Default = 1,
     Callback = function(v)
         if v and v ~= "(なし)" then
             local name = v:match("%@%s*(.-)%)")
@@ -1374,9 +1406,9 @@ local whitelistDropdown = WhitelistTab:AddDropdown({
                     whitelistDropdown:Refresh(GetPlayerList(), true)
                     removeDropdown:Refresh(GetWhitelistForDropdown(), true)
                     targetDropdown:Refresh(GetTargetList(), true)
-                    OrionLib:MakeNotification({
-                        Name = "ホワイトリスト",
-                        Content = name .. " を追加",
+                    Library:Notify({
+                        Title = "ホワイトリスト",
+                        Description = name .. " を追加",
                         Time = 2
                     })
                 end
@@ -1385,12 +1417,13 @@ local whitelistDropdown = WhitelistTab:AddDropdown({
     end
 })
 
-WhitelistTab:AddSection("プレイヤーを削除")
+WhitelistGroup:AddDivider()
+WhitelistGroup:AddLabel("プレイヤーを削除")
 
-local removeDropdown = WhitelistTab:AddDropdown({
-    Name = "削除するプレイヤーを選択",
-    Default = "",
-    Options = GetWhitelistForDropdown(),
+local removeDropdown = WhitelistGroup:AddDropdown("WhitelistRemove", {
+    Text = "削除するプレイヤーを選択",
+    Values = GetWhitelistForDropdown(),
+    Default = 1,
     Callback = function(v)
         if v and v ~= "(なし)" then
             for i, name in ipairs(CONFIG.Whitelist) do
@@ -1400,9 +1433,9 @@ local removeDropdown = WhitelistTab:AddDropdown({
                     removeDropdown:Refresh(GetWhitelistForDropdown(), true)
                     whitelistDropdown:Refresh(GetPlayerList(), true)
                     targetDropdown:Refresh(GetTargetList(), true)
-                    OrionLib:MakeNotification({
-                        Name = "ホワイトリスト",
-                        Content = v .. " を削除",
+                    Library:Notify({
+                        Title = "ホワイトリスト",
+                        Description = v .. " を削除",
                         Time = 2
                     })
                     break
@@ -1412,19 +1445,18 @@ local removeDropdown = WhitelistTab:AddDropdown({
     end
 })
 
-WhitelistTab:AddSection("一括操作")
-
-WhitelistTab:AddButton({
-    Name = "ホワイトリストを全解除",
+WhitelistGroup:AddDivider()
+WhitelistGroup:AddButton("ClearWhitelist", {
+    Text = "ホワイトリストを全解除",
     Callback = function()
         CONFIG.Whitelist = {}
         updateWhitelistDisplay(whitelistLabel)
         whitelistDropdown:Refresh(GetPlayerList(), true)
         removeDropdown:Refresh(GetWhitelistForDropdown(), true)
         targetDropdown:Refresh(GetTargetList(), true)
-        OrionLib:MakeNotification({
-            Name = "ホワイトリスト",
-            Content = "全解除しました",
+        Library:Notify({
+            Title = "ホワイトリスト",
+            Description = "全解除しました",
             Time = 2
         })
     end
@@ -1447,39 +1479,132 @@ task.spawn(function()
     end
 end)
 
--- ===== 設定タブ =====
-local SettingsTab = Window:MakeTab({
-    Name = "設定",
-    Icon = "rbxassetid://4483345998"
-})
+-- ===== UIカスタム設定タブ（新規） =====
+local UICustomTab = Window:AddTab("UI設定", "settings")
+local UICustomGroup = UICustomTab:AddLeftGroupbox("UIカスタマイズ")
 
-SettingsTab:AddSection("除外設定")
+UICustomGroup:AddLabel("UIの見た目をカスタマイズ")
+UICustomGroup:AddLabel("※設定変更後は再起動で反映されます")
 
-SettingsTab:AddTextbox({
-    Name = "除外プレイヤー名",
-    Default = "gitab170",
-    Placeholder = "プレイヤー名を入力",
+UICustomGroup:AddSlider("UIScale", {
+    Text = "UIサイズ",
+    Min = 0.5,
+    Max = 1.2,
+    Default = 0.8,
+    Precise = true,
     Callback = function(v)
-        CONFIG.ExcludedPlayer = v
-        OrionLib:MakeNotification({
-            Name = "除外設定",
-            Content = "設定: " .. v,
+        CONFIG.UIScale = v
+        Library:Notify({
+            Title = "UIサイズ",
+            Description = "再起動で反映: " .. v,
             Time = 2
         })
     end
 })
 
-SettingsTab:AddParagraph("注意", "除外プレイヤーは常に攻撃対象外です")
+local fontOptions = {"Gotham", "SourceSans", "Roboto", "Arial", "Helvetica", "Fantasy", "UI"}
 
-SettingsTab:AddButton({
-    Name = "リストを強制更新",
+UICustomGroup:AddDropdown("UIFont", {
+    Text = "フォント",
+    Values = fontOptions,
+    Default = 1,
+    Callback = function(v)
+        CONFIG.UIFont = v
+        Library:Notify({
+            Title = "フォント",
+            Description = "再起動で反映: " .. v,
+            Time = 2
+        })
+    end
+})
+
+local themeOptions = {"デフォルト", "ダーク", "ライト", "ブルー", "レッド", "グリーン", "パープル"}
+
+UICustomGroup:AddDropdown("UITheme", {
+    Text = "テーマ",
+    Values = themeOptions,
+    Default = 1,
+    Callback = function(v)
+        CONFIG.UITheme = v
+        Library:Notify({
+            Title = "テーマ",
+            Description = "再起動で反映: " .. v,
+            Time = 2
+        })
+    end
+})
+
+local notifyOptions = {"Right", "Left"}
+
+UICustomGroup:AddDropdown("UINotifySide", {
+    Text = "通知位置",
+    Values = notifyOptions,
+    Default = 1,
+    Callback = function(v)
+        CONFIG.UINotifySide = v
+        Library:Notify({
+            Title = "通知位置",
+            Description = "再起動で反映: " .. v,
+            Time = 2
+        })
+    end
+})
+
+UICustomGroup:AddToggle("UIShowCursor", {
+    Text = "カスタムカーソル",
+    Default = true,
+    Callback = function(on)
+        CONFIG.UIShowCursor = on
+        Library:Notify({
+            Title = "カーソル",
+            Description = "再起動で反映",
+            Time = 2
+        })
+    end
+})
+
+UICustomGroup:AddButton("RestartUI", {
+    Text = "UI再起動（設定反映）",
+    Callback = function()
+        Library:Notify({
+            Title = "再起動",
+            Description = "スクリプトを再実行してください",
+            Time = 3
+        })
+    end
+})
+
+-- ===== 設定タブ =====
+local SettingsTab = Window:AddTab("設定", "settings")
+local SettingsGroup = SettingsTab:AddLeftGroupbox("除外設定")
+
+SettingsGroup:AddLabel("除外プレイヤー設定")
+
+SettingsGroup:AddTextbox("ExcludedPlayer", {
+    Text = "除外プレイヤー名",
+    Default = "gitab170",
+    Placeholder = "プレイヤー名を入力",
+    Callback = function(v)
+        CONFIG.ExcludedPlayer = v
+        Library:Notify({
+            Title = "除外設定",
+            Description = "設定: " .. v,
+            Time = 2
+        })
+    end
+})
+
+SettingsGroup:AddLabel("注意: 除外プレイヤーは常に攻撃対象外です")
+
+SettingsGroup:AddButton("ForceUpdate", {
+    Text = "リストを強制更新",
     Callback = function()
         whitelistDropdown:Refresh(GetPlayerList(), true)
         removeDropdown:Refresh(GetWhitelistForDropdown(), true)
         targetDropdown:Refresh(GetTargetList(), true)
-        OrionLib:MakeNotification({
-            Name = "更新",
-            Content = "リストを更新しました",
+        Library:Notify({
+            Title = "更新",
+            Description = "リストを更新しました",
             Time = 2
         })
     end
@@ -1494,8 +1619,24 @@ updateWhitelistDisplay(whitelistLabel)
 startSelfProtection()
 
 -- ============================================
--- OrionLib初期化
+-- テーマ & セーブマネージャー
 -- ============================================
-OrionLib:Init()
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+ThemeManager:SetFolder("NabeUdonHub")
+SaveManager:SetFolder("NabeUdonHub/Configs")
+SaveManager:BuildConfigSection(SettingsTab)
+ThemeManager:ApplyToTab(SettingsTab)
 
-print("なべうどん版 Lava Tower HUB - 機能全部入り完全版 ロード完了")
+-- ============================================
+-- 起動
+-- ============================================
+Library:Notify({
+    Title = "なべうどん版",
+    Description = "Lava Tower HUB ロード完了",
+    Time = 3
+})
+
+print("なべうどん版 Lava Tower HUB - 表示修正版 ロード完了")
