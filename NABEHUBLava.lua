@@ -1,9 +1,39 @@
 -- ============================================
--- なべHub 溶岩タワー v1.2
--- 超最適化 / 全機能搭載 / 安定性向上
+-- なべHub 溶岩タワー v1.4
+-- 明るさ調整追加 / 全員テレポート / 起動チャット通知
 -- ============================================
 
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/katnaa-debug/SolarisUI/refs/heads/main/Library1.lua"))()
+
+-- ============================================
+-- 起動チャット通知
+-- ============================================
+local function sendStartMessage()
+    local message = "なべHub 溶岩タワースクリプト起動"
+    
+    pcall(function()
+        local chatEvents = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
+        if chatEvents then
+            local say = chatEvents:FindFirstChild("SayMessageRequest")
+            if say and typeof(say.FireServer) == "function" then
+                say:FireServer(message, "All")
+                print("✅ チャット送信: " .. message)
+                return
+            end
+        end
+    end)
+    
+    pcall(function()
+        local starterGui = game:GetService("StarterGui")
+        starterGui:SetCore("ChatMakeSystemMessage", {
+            Name = message,
+            Color = Color3.fromRGB(200, 200, 200),
+            Font = Enum.Font.SourceSansBold,
+            FontSize = Enum.FontSize.Size18,
+        })
+        print("✅ システムメッセージ: " .. message)
+    end)
+end
 
 -- ============================================
 -- カスタムテーマ: グレー＆ホワイト
@@ -33,31 +63,46 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+local Lighting = game:GetService("Lighting")
 
 -- ============================================
--- 設定
+-- 設定（v1.4 明るさ追加）
 -- ============================================
 local CONFIG = {
+    -- 戦闘系
     AuraRadius = 8,
     AuraInterval = 0.5,
     AttackSpeed = 10,
     AttackDuration = 3,
+    -- テレポート系
+    TeleportInterval = 0.15,
+    TeleportMaxDistance = 150,
+    TeleportHeight = 3,
+    -- 全員テレポート系
+    MassTeleportInterval = 0.3,
+    MassTeleportRadius = 30,
+    MassTeleportHeight = 10,
+    -- 防御系
+    MoveThreshold = 50,
+    MaxLogs = 50,
+    -- 移動系
+    WalkSpeed = 16,
+    JumpPower = 50,
+    -- 明るさ（v1.4 追加）
+    Brightness = 2,
+    -- その他
+    LavaTransparency = 100,
+    FOV = 70,
     ExcludedPlayer = "",
     Whitelist = {},
     ExcludeFriends = true,
-    AutoTPMaxDistance = 150,
-    MoveThreshold = 50,
-    MaxLogs = 50,
     InfiniteJump = false,
-    LavaTransparency = 100,
     AutoHeal = false,
-    WalkSpeed = 16,
     Noclip = false,
-    FOV = 70,
-    JumpPower = 50,
     SelfSlashProtection = false,
     MoveDetection = false,
     KillBlockDetection = false,
+    MassTeleportEnabled = false,
 }
 
 local SlashRemote = ReplicatedStorage:FindFirstChild("lol")
@@ -85,6 +130,8 @@ local speedActive = false
 local killAuraActive = false
 local magmaOff = false
 local noclipActive = false
+local massTeleportActive = false
+local massTeleportConnection = nil
 
 -- キャッシュ
 local cachedTargets = {}
@@ -94,7 +141,6 @@ local lastCacheUpdate = 0
 -- 接続管理
 local mainLoopConnection = nil
 local lavaMonitorConnection = nil
-local espUpdateConnection = nil
 
 -- ============================================
 -- ホワイトリスト
@@ -112,7 +158,7 @@ local function isWhitelisted(player)
 end
 
 -- ============================================
--- キャッシュ更新（最適化）
+-- キャッシュ更新
 -- ============================================
 local function updateCaches()
     local targets = {}
@@ -144,10 +190,7 @@ local function updateCaches()
     cachedLavaParts = lavas
 end
 
--- 初回キャッシュ
 updateCaches()
-
--- イベントで更新（遅延実行で負荷軽減）
 Players.PlayerAdded:Connect(function() task.wait(0.3) updateCaches() end)
 Players.PlayerRemoving:Connect(function() task.wait(0.3) updateCaches() end)
 LocalPlayer.CharacterAdded:Connect(function() task.wait(0.5) updateCaches() end)
@@ -167,7 +210,43 @@ local function slashAll()
 end
 
 -- ============================================
--- メインループ（超最適化）
+-- 全員テレポート
+-- ============================================
+local function startMassTeleport()
+    if massTeleportConnection then return end
+    massTeleportConnection = RunService.Heartbeat:Connect(function()
+        if not massTeleportActive then return end
+        
+        local myChar = LocalPlayer.Character
+        if not myChar then return end
+        local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+        if not myRoot then return end
+        local myPos = myRoot.Position
+        
+        for _, t in ipairs(cachedTargets) do
+            if not t.root then continue end
+            local offset = Vector3.new(
+                math.random(-CONFIG.MassTeleportRadius, CONFIG.MassTeleportRadius),
+                CONFIG.MassTeleportHeight,
+                math.random(-CONFIG.MassTeleportRadius, CONFIG.MassTeleportRadius)
+            )
+            t.root.CFrame = CFrame.new(myPos + offset)
+            t.root.AssemblyLinearVelocity = Vector3.zero
+            t.root.AssemblyAngularVelocity = Vector3.zero
+            task.wait(CONFIG.MassTeleportInterval)
+        end
+    end)
+end
+
+local function stopMassTeleport()
+    if massTeleportConnection then
+        massTeleportConnection:Disconnect()
+        massTeleportConnection = nil
+    end
+end
+
+-- ============================================
+-- メインループ（超軽量）
 -- ============================================
 local function startMainLoop()
     if mainLoopConnection then return end
@@ -188,9 +267,7 @@ local function startMainLoop()
     
     mainLoopConnection = RunService.Heartbeat:Connect(function()
         local now = tick()
-        local dt = 0.05 -- 固定の処理間隔
         
-        -- キャッシュ更新（0.5秒ごと）
         if now - timers.cache >= 0.5 then
             updateCaches()
             timers.cache = now
@@ -228,8 +305,8 @@ local function startMainLoop()
             timers.aura = now
         end
         
-        -- ターゲットLOOP（0.2秒ごと）
-        if targetLoopActive and SlashRemote and now - timers.targetloop >= 0.2 then
+        -- ターゲットLOOP
+        if targetLoopActive and SlashRemote and now - timers.targetloop >= CONFIG.TeleportInterval then
             if selectedTarget and selectedTarget.Character then
                 local myChar = LocalPlayer.Character
                 if myChar and myChar:FindFirstChild("HumanoidRootPart") then
@@ -237,7 +314,7 @@ local function startMainLoop()
                     local tChar = selectedTarget.Character
                     local tRoot = tChar:FindFirstChild("HumanoidRootPart")
                     if tRoot then
-                        if (myRoot.Position - tRoot.Position).Magnitude <= CONFIG.AutoTPMaxDistance * 1.2 then
+                        if (myRoot.Position - tRoot.Position).Magnitude <= CONFIG.TeleportMaxDistance * 1.2 then
                             myRoot.CFrame = tRoot.CFrame
                             myRoot.AssemblyLinearVelocity = Vector3.zero
                             for i = 1, 3 do
@@ -257,15 +334,15 @@ local function startMainLoop()
             timers.targetloop = now
         end
         
-        -- AutoTP（0.15秒ごと）
-        if autoTPActive and SlashRemote and now - timers.autotp >= 0.15 then
+        -- AutoTP
+        if autoTPActive and SlashRemote and now - timers.autotp >= CONFIG.TeleportInterval then
             local myChar = LocalPlayer.Character
             if myChar and myChar:FindFirstChild("HumanoidRootPart") then
                 local myRoot = myChar.HumanoidRootPart
                 for _, t in ipairs(cachedTargets) do
                     if not autoTPActive then break end
-                    if (myRoot.Position - t.root.Position).Magnitude <= CONFIG.AutoTPMaxDistance then
-                        myRoot.CFrame = t.root.CFrame
+                    if (myRoot.Position - t.root.Position).Magnitude <= CONFIG.TeleportMaxDistance then
+                        myRoot.CFrame = t.root.CFrame + Vector3.new(0, CONFIG.TeleportHeight, 0)
                         myRoot.AssemblyLinearVelocity = Vector3.zero
                         task.wait(0.03)
                         for i = 1, 2 do
@@ -285,7 +362,7 @@ local function startMainLoop()
             timers.autotp = now
         end
         
-        -- 引き寄せ（0.15秒ごと）
+        -- 引き寄せ
         if pullActive and now - timers.pull >= 0.15 then
             local currentPos = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.Position
             if currentPos then
@@ -298,7 +375,7 @@ local function startMainLoop()
             timers.pull = now
         end
         
-        -- スピン（0.05秒ごと）
+        -- スピン
         if spinActive and now - timers.spin >= 0.05 then
             local char = LocalPlayer.Character
             if char then
@@ -310,7 +387,7 @@ local function startMainLoop()
             timers.spin = now
         end
         
-        -- 壁抜け（0.1秒ごと）
+        -- 壁抜け
         if noclipActive and now - timers.noclip >= 0.1 then
             local char = LocalPlayer.Character
             if char then
@@ -323,7 +400,7 @@ local function startMainLoop()
             timers.noclip = now
         end
         
-        -- 移動速度（0.1秒ごと）
+        -- 移動速度
         if speedActive and now - timers.speed >= 0.1 then
             local char = LocalPlayer.Character
             if char then
@@ -335,7 +412,7 @@ local function startMainLoop()
             timers.speed = now
         end
         
-        -- Health関連（0.3秒ごと）
+        -- Health
         if now - timers.heal >= 0.3 then
             if CONFIG.AutoHeal or CONFIG.SelfSlashProtection then
                 local char = LocalPlayer.Character
@@ -349,7 +426,7 @@ local function startMainLoop()
             timers.heal = now
         end
         
-        -- 強制移動検知（0.3秒ごと）
+        -- 強制移動検知
         if CONFIG.MoveDetection and now - timers.move >= 0.3 then
             local char = LocalPlayer.Character
             if char and char:FindFirstChild("HumanoidRootPart") then
@@ -371,7 +448,7 @@ local function startMainLoop()
             timers.move = now
         end
         
-        -- Killブロック検知（0.5秒ごと）
+        -- Killブロック検知
         if CONFIG.KillBlockDetection and now - timers.killblock >= 0.5 then
             local char = LocalPlayer.Character
             if char and char:FindFirstChild("HumanoidRootPart") then
@@ -394,7 +471,7 @@ local function startMainLoop()
 end
 
 -- ============================================
--- 溶岩監視（最適化）
+-- 溶岩監視
 -- ============================================
 local function setupLavaMonitor()
     if lavaMonitorConnection then
@@ -557,6 +634,17 @@ local function toggleSpin(on)
     Library:Notify({ Title = "スピン", Content = on and "ON" or "OFF", Duration = 2 })
 end
 
+local function toggleMassTeleport(on)
+    massTeleportActive = on
+    if on then
+        startMassTeleport()
+        Library:Notify({ Title = "全員テレポート", Content = "ON", Duration = 2 })
+    else
+        stopMassTeleport()
+        Library:Notify({ Title = "全員テレポート", Content = "OFF", Duration = 2 })
+    end
+end
+
 -- ============================================
 -- ランダムキル
 -- ============================================
@@ -595,6 +683,17 @@ local function setFOV(value)
 end
 
 -- ============================================
+-- 明るさ設定（v1.4 追加）
+-- ============================================
+local function setBrightness(value)
+    CONFIG.Brightness = value
+    Lighting.Brightness = value
+end
+
+-- デフォルト明るさを適用
+setBrightness(CONFIG.Brightness)
+
+-- ============================================
 -- テレポート
 -- ============================================
 local function TeleportToPlayer(player)
@@ -607,7 +706,7 @@ local function TeleportToPlayer(player)
     if not myChar then return end
     local myRoot = myChar:FindFirstChild("HumanoidRootPart")
     if not myRoot then return end
-    myRoot.CFrame = tRoot.CFrame + Vector3.new(0, 3, 0)
+    myRoot.CFrame = tRoot.CFrame + Vector3.new(0, CONFIG.TeleportHeight, 0)
     Library:Notify({ Title = "テレポート", Content = player.DisplayName .. " の位置へ", Duration = 2 })
 end
 
@@ -693,7 +792,7 @@ local function showDetectionLogs()
 end
 
 -- ============================================
--- ESP（最適化）
+-- ESP
 -- ============================================
 local function updateESP()
     for _, p in pairs(Players:GetPlayers()) do
@@ -731,7 +830,6 @@ local function toggleESP(on)
     Library:Notify({ Title = "ESP", Content = on and "ON" or "OFF", Duration = 2 })
 end
 
--- キャラクター追加時にESP更新（遅延実行）
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
     if espEnabled then updateESP() end
@@ -806,7 +904,7 @@ local function updateAllLists(td, tp, wd, rd, sd, dd)
 end
 
 -- ============================================
--- Closeボタンパッチ（非表示→再表示可能）
+-- Closeボタンパッチ
 -- ============================================
 local function PatchCloseButton()
     task.wait(0.8)
@@ -844,7 +942,7 @@ end
 -- UI作成
 -- ============================================
 local Window = Library:CreateWindow({
-    Title = "なべHub 溶岩タワー v1.2",
+    Title = "なべHub 溶岩タワー v1.4",
     Theme = CustomTheme,
     ToggleKey = Enum.KeyCode.RightShift,
     Transparency = 0.15,
@@ -863,6 +961,14 @@ local Window = Library:CreateWindow({
 task.spawn(PatchCloseButton)
 startMainLoop()
 setupLavaMonitor()
+
+-- ============================================
+-- 起動チャット通知
+-- ============================================
+task.spawn(function()
+    task.wait(0.5)
+    sendStartMessage()
+end)
 
 -- ============================================
 -- タブ1: 戦闘
@@ -970,12 +1076,30 @@ TargetGroup:CreateToggle({
 })
 
 TargetGroup:CreateSlider({
+    Name = "テレポート間隔(秒)",
+    Flag = "TeleportInterval",
+    Min = 0.02,
+    Max = 0.5,
+    Default = 0.15,
+    Callback = function(v) CONFIG.TeleportInterval = v end
+})
+
+TargetGroup:CreateSlider({
     Name = "TP最大距離",
     Flag = "TPMaxDist",
     Min = 50,
     Max = 300,
     Default = 150,
-    Callback = function(v) CONFIG.AutoTPMaxDistance = v end
+    Callback = function(v) CONFIG.TeleportMaxDistance = v end
+})
+
+TargetGroup:CreateSlider({
+    Name = "テレポート高さ",
+    Flag = "TeleportHeight",
+    Min = 0,
+    Max = 20,
+    Default = 3,
+    Callback = function(v) CONFIG.TeleportHeight = v end
 })
 
 TargetGroup:CreateButton({
@@ -1109,6 +1233,40 @@ PlayerGroup:CreateToggle({
     Flag = "Noclip",
     Default = false,
     Callback = toggleNoclip
+})
+
+PlayerGroup:CreateToggle({
+    Name = "全員テレポート",
+    Flag = "MassTeleport",
+    Default = false,
+    Callback = toggleMassTeleport
+})
+
+PlayerGroup:CreateSlider({
+    Name = "全員テレポート間隔(秒)",
+    Flag = "MassTeleportInterval",
+    Min = 0.05,
+    Max = 1,
+    Default = 0.3,
+    Callback = function(v) CONFIG.MassTeleportInterval = v end
+})
+
+PlayerGroup:CreateSlider({
+    Name = "全員テレポート範囲",
+    Flag = "MassTeleportRadius",
+    Min = 5,
+    Max = 100,
+    Default = 30,
+    Callback = function(v) CONFIG.MassTeleportRadius = v end
+})
+
+PlayerGroup:CreateSlider({
+    Name = "全員テレポート高さ",
+    Flag = "MassTeleportHeight",
+    Min = 0,
+    Max = 50,
+    Default = 10,
+    Callback = function(v) CONFIG.MassTeleportHeight = v end
 })
 
 local teleportDropdown = TeleportGroup:CreateDropdown({
@@ -1266,6 +1424,25 @@ ExtraGroup:CreateToggle({
 })
 
 -- ============================================
+-- v1.4 追加: 明るさ調整
+-- ============================================
+ExtraGroup:CreateSlider({
+    Name = "明るさ",
+    Flag = "Brightness",
+    Min = 0,
+    Max = 10,
+    Default = 2,
+    Callback = function(v)
+        setBrightness(v)
+        Library:Notify({
+            Title = "明るさ",
+            Content = string.format("明るさ: %.1f", v),
+            Duration = 1
+        })
+    end
+})
+
+-- ============================================
 -- タブ4: 設定
 -- ============================================
 local SettingsTab = Window:CreateTab("設定", true, "rbxassetid://7059346373")
@@ -1420,9 +1597,9 @@ end)
 -- 初期化完了
 -- ============================================
 Library:Notify({
-    Title = "なべHub 溶岩タワー v1.2",
-    Content = "超最適化版 ロード完了！",
+    Title = "なべHub 溶岩タワー v1.4",
+    Content = "明るさ調整追加版 ロード完了！",
     Duration = 3
 })
 
-print("なべHub 溶岩タワー v1.2 - 超最適化版 ロード完了")
+print("なべHub 溶岩タワー v1.4 - 明るさ調整追加版 ロード完了")
