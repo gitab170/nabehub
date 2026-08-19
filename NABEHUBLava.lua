@@ -1,4 +1,6 @@
--- スクリプト盗もうとしてたわけではないよね？ちゃんとロガーとか入ってないか確認するだけだよね？ねぇ？Lamは絶対中身見ると思うけど、あとURLはASCIIコード変換で難読したよ、え？盗まれたくなかったら強い難読化しろって？バーロー
+-- 盗んだら許しませんよ
+-- 製作者・なべうどん なべHub
+-- TikTokもやってます
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/katnaa-debug/SolarisUI/refs/heads/main/Library1.lua"))()
 
 local function sendStartMessage()
