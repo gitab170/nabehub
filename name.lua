@@ -18,7 +18,7 @@ local function sendStartMessage()
             local say = chatEvents:FindFirstChild("SayMessageRequest")
             if say and typeof(say.FireServer) == "function" then
                 say:FireServer(message, "All")
-                print("✅ チャット送信: " .. message)
+                print("チャット送信: " .. message)
                 return
             end
         end
@@ -32,7 +32,7 @@ local function sendStartMessage()
             Font = Enum.Font.SourceSansBold,
             FontSize = Enum.FontSize.Size18,
         })
-        print("✅ システムメッセージ: " .. message)
+        print("システムメッセージ: " .. message)
     end)
 end
 
